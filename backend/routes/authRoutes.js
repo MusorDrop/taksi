@@ -4,7 +4,10 @@ const { authenticateToken } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// Авторизация или автоматическая регистрация пользователя
+// Регистрация нового пользователя
+router.post('/register', authController.register);
+
+// Авторизация пользователя
 router.post('/login', authController.login);
 
 // Получение профиля текущего пользователя

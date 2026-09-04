@@ -57,10 +57,10 @@ async function registerUser({ username, password, firstName, lastName, phone, ro
 }
 
 /**
- * Контроллер входа и автоматической регистрации пользователя
- * POST /api/auth/login
+ * Контроллер регистрации нового пользователя
+ * POST /api/auth/register
  */
-async function login(req, res) {
+async function register(req, res) {
     const { username, password, first_name, last_name, phone, role } = req.body;
 
     if (!username || !password) {
@@ -71,27 +71,15 @@ async function login(req, res) {
 
     try {
         const trimmedUsername = username.trim();
-        const existingQuery = 'SELECT * FROM users WHERE username = $1';
+        const existingQuery = 'SELECT id FROM users WHERE username = $1';
         const existingResult = await pool.query(existingQuery, [trimmedUsername]);
 
-        // Если пользователь существует — проверяем пароль
         if (existingResult.rows.length > 0) {
-            const user = existingResult.rows[0];
-            const isMatch = await bcrypt.compare(password, user.password_hash);
-
-            if (!isMatch) {
-                return res.status(401).json({ error: 'Неверный пароль' });
-            }
-
-            const token = createToken(user);
-            return res.json({
-                message: 'Успешная авторизация',
-                token,
-                user: formatUserProfile(user)
+            return res.status(409).json({
+                error: 'Пользователь с таким именем уже существует'
             });
         }
 
-        // Если пользователя нет — регистрируем нового
         const newUser = await registerUser({
             username: trimmedUsername,
             password,
@@ -106,6 +94,47 @@ async function login(req, res) {
             message: 'Пользователь успешно зарегистрирован',
             token,
             user: formatUserProfile(newUser)
+        });
+    } catch (err) {
+        console.error('Ошибка в register контроллере:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при регистрации' });
+    }
+}
+
+/**
+ * Контроллер входа пользователя в систему
+ * POST /api/auth/login
+ */
+async function login(req, res) {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({
+            error: 'Поля username и password обязательны для заполнения'
+        });
+    }
+
+    try {
+        const trimmedUsername = username.trim();
+        const userQuery = 'SELECT * FROM users WHERE username = $1';
+        const result = await pool.query(userQuery, [trimmedUsername]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        const user = result.rows[0];
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Неверный пароль' });
+        }
+
+        const token = createToken(user);
+        return res.json({
+            message: 'Успешная авторизация',
+            token,
+            user: formatUserProfile(user)
         });
     } catch (err) {
         console.error('Ошибка в login контроллере:', err);
@@ -138,6 +167,7 @@ async function getProfile(req, res) {
 }
 
 module.exports = {
+    register,
     login,
     getProfile,
     formatUserProfile,
