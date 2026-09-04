@@ -9,17 +9,6 @@ GEMINI.md
 repomix.config.json
 .repomixignore
 
-# Node.js
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# Environment variables
-.env
-.env.local
-.env.development
-.env.production
-
 # IDE / Editor
 .vscode/
 .idea/
