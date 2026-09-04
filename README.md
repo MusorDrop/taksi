@@ -48,7 +48,7 @@ taksi/
 ### 🔹 [Backend](./backend/README.md)
 Сердце системы, обрабатывающее логику, работу с гео-данными и ИИ.
 - **Движок:** Node.js + Express.js.
-- **База данных:** PostgreSQL + PostGIS (обязательно для радиусных и маршрутных расчетов).
+- **База данных:** PostgreSQL + PostGIS (обязательно для радиусных и маршрутных расчетов). Схема базы данных описана в [backend/README.md](./backend/README.md).
 - **Взаимодействие:** REST API.
 
 ### 🔹 [Frontend](./frontend/README.md)
