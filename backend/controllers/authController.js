@@ -69,24 +69,30 @@ async function register(req, res) {
         });
     }
 
+    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
+    if (!trimmedUsername) {
+        return res.status(400).json({
+            error: 'Поля username и password обязательны для заполнения'
+        });
+    }
+
+    // Строгая валидация роли пользователя
+    const ALLOWED_ROLES = ['driver', 'passenger', 'both'];
+    const userRole = role !== undefined ? role : 'both';
+    if (!ALLOWED_ROLES.includes(userRole)) {
+        return res.status(400).json({
+            error: "Недопустимая роль. Разрешены только: 'driver', 'passenger', 'both'"
+        });
+    }
+
     try {
-        const trimmedUsername = username.trim();
-        const existingQuery = 'SELECT id FROM users WHERE username = $1';
-        const existingResult = await pool.query(existingQuery, [trimmedUsername]);
-
-        if (existingResult.rows.length > 0) {
-            return res.status(409).json({
-                error: 'Пользователь с таким именем уже существует'
-            });
-        }
-
         const newUser = await registerUser({
             username: trimmedUsername,
             password,
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
             phone: phone ? phone.trim() : null,
-            role: role || 'both'
+            role: userRole
         });
 
         const token = createToken(newUser);
@@ -96,6 +102,13 @@ async function register(req, res) {
             user: formatUserProfile(newUser)
         });
     } catch (err) {
+        // Код 23505: нарушение уникальности (Unique violation) в PostgreSQL
+        if (err.code === '23505') {
+            return res.status(409).json({
+                error: 'Пользователь с таким именем уже существует'
+            });
+        }
+
         console.error('Ошибка в register контроллере:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при регистрации' });
     }

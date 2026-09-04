@@ -15,6 +15,18 @@ const KNOWN_LOCATIONS = {
 const DEFAULT_START = { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' };
 const DEFAULT_END = { lon: 60.7712, lat: 56.7686, name: 'Новокольцовский' };
 
+// Регулярное выражение для валидации UUID
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Валидация формата UUID
+ * @param {string} id - Проверяемый идентификатор
+ * @returns {boolean} true, если id является корректным UUID
+ */
+function isValidUuid(id) {
+    return typeof id === 'string' && UUID_REGEX.test(id);
+}
+
 /**
  * Определение координат точки по переданному объекту, координатам или названию
  * @param {any} input - Входное значение точки (строка или объект с координатами)
@@ -199,7 +211,9 @@ async function getRides(req, res) {
                 r.created_at
             FROM rides r
             LEFT JOIN users u ON r.driver_id = u.id
+            WHERE r.status = 'scheduled' AND r.departure_time > NOW()
             ORDER BY r.departure_time ASC
+            LIMIT 50
         `;
 
         const result = await pool.query(selectQuery);
@@ -232,8 +246,11 @@ async function getRides(req, res) {
  */
 async function joinRide(req, res) {
     const rideId = req.params.id;
-    const passengerId = extractUserId(req);
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
 
+    const passengerId = extractUserId(req);
     if (!passengerId) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
@@ -250,6 +267,12 @@ async function joinRide(req, res) {
         }
 
         const ride = rideCheck.rows[0];
+
+        // Проверка статуса поездки
+        if (ride.status !== 'scheduled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Присоединиться можно только к запланированной поездке' });
+        }
 
         // Водитель не может присоединиться к своей поездке
         if (ride.driver_id === passengerId) {
@@ -309,8 +332,11 @@ async function joinRide(req, res) {
  */
 async function leaveRide(req, res) {
     const rideId = req.params.id;
-    const passengerId = extractUserId(req);
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
 
+    const passengerId = extractUserId(req);
     if (!passengerId) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
@@ -319,10 +345,25 @@ async function leaveRide(req, res) {
     try {
         await client.query('BEGIN');
 
+        // Проверка существования поездки
+        const rideCheck = await client.query('SELECT * FROM rides WHERE id = $1 FOR UPDATE', [rideId]);
+        if (rideCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const ride = rideCheck.rows[0];
+
+        // Проверка статуса поездки
+        if (ride.status !== 'scheduled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Отменить участие можно только в запланированной поездке' });
+        }
+
         // Атомарное удаление бронирования во избежание состояния гонки (Race Condition)
         const deleteRes = await client.query(
             "DELETE FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = 'accepted' RETURNING id",
-            [rideId, req.user.id]
+            [rideId, passengerId]
         );
 
         if (deleteRes.rowCount === 0) {
