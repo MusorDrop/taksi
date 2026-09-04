@@ -74,16 +74,15 @@ function parseDepartureTime(timeInput) {
 }
 
 /**
- * Извлечение ID пользователя из авторизации или тела запроса
+ * Извлечение ID пользователя строго из токена авторизации
  * @param {object} req - Express запрос
- * @param {string} field - Название поля в body (например, 'driver_id')
  * @returns {string|null} ID пользователя
  */
-function extractUserId(req, field) {
+function extractUserId(req) {
     if (req.user && req.user.id) {
         return req.user.id;
     }
-    return req.body[field] || req.body.driverId || req.body.passengerId || null;
+    return null;
 }
 
 /**
@@ -91,9 +90,9 @@ function extractUserId(req, field) {
  * POST /api/rides
  */
 async function createRide(req, res) {
-    const driverId = extractUserId(req, 'driver_id');
+    const driverId = extractUserId(req);
     if (!driverId) {
-        return res.status(400).json({ error: 'Не указан идентификатор водителя (driver_id)' });
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
     const startCoords = resolvePointCoordinates(
@@ -233,10 +232,10 @@ async function getRides(req, res) {
  */
 async function joinRide(req, res) {
     const rideId = req.params.id;
-    const passengerId = extractUserId(req, 'passenger_id');
+    const passengerId = extractUserId(req);
 
     if (!passengerId) {
-        return res.status(400).json({ error: 'Не указан идентификатор пассажира (passenger_id)' });
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
     const client = await pool.connect();
@@ -310,33 +309,28 @@ async function joinRide(req, res) {
  */
 async function leaveRide(req, res) {
     const rideId = req.params.id;
-    const passengerId = extractUserId(req, 'passenger_id');
+    const passengerId = extractUserId(req);
 
     if (!passengerId) {
-        return res.status(400).json({ error: 'Не указан идентификатор пассажира (passenger_id)' });
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        // Поиск активного бронирования пассажира
-        const matchCheck = await client.query(
-            'SELECT id FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = $3 LIMIT 1',
-            [rideId, passengerId, 'accepted']
+        // Атомарное удаление бронирования во избежание состояния гонки (Race Condition)
+        const deleteRes = await client.query(
+            "DELETE FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = 'accepted' RETURNING id",
+            [rideId, req.user.id]
         );
 
-        if (matchCheck.rows.length === 0) {
+        if (deleteRes.rowCount === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Бронирование пассажира для данной поездки не найдено' });
         }
 
-        const matchId = matchCheck.rows[0].id;
-
-        // Удаление записи из matches согласно ТЗ
-        await client.query('DELETE FROM matches WHERE id = $1', [matchId]);
-
-        // Инкремент свободных мест
+        // Инкремент свободных мест только при успешном удалении
         const updateRideRes = await client.query(
             'UPDATE rides SET available_seats = LEAST(total_seats, available_seats + 1) WHERE id = $1 RETURNING available_seats',
             [rideId]
