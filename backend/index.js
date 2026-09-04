@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
@@ -10,6 +10,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Роуты API
+const authRoutes = require('./routes/authRoutes');
+const rideRoutes = require('./routes/rideRoutes');
+
 // Базовый роут проверки здоровья сервера
 app.get('/api/health', async (req, res) => {
     try {
@@ -19,6 +23,10 @@ app.get('/api/health', async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Ошибка подключения к БД' });
     }
 });
+
+// Подключение роутов
+app.use('/api/auth', authRoutes);
+app.use('/api/rides', rideRoutes);
 
 // Запуск сервера
 app.listen(PORT, () => {
