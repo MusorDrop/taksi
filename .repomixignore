@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.next/
+scratch/
+.artifacts/
+*.log
+*.lock
+package-lock.json
+pnpm-lock.yaml
