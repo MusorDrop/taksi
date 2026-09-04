@@ -1,0 +1,10 @@
+# Antigravity Agent Scratch & Cache
+scratch/
+.repomix-output.*
+.artifacts/
+
+# Antigravity Project Scaffolding
+.agents/
+GEMINI.md
+repomix.config.json
+.repomixignore
