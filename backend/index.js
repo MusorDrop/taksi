@@ -33,6 +33,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
 
 // Запуск сервера
-app.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Сервер запущен на порту ${PORT}`);
+    });
+}
+
+module.exports = app;
+
