@@ -199,7 +199,7 @@ async function runSmokeTests() {
 
             console.log(`Статус: ${status} (Ожидался: 201)`);
             console.log(`Рассчитанная дистанция: ${distance} км`);
-            console.log(`Рассчитанная стоимость: ${price} руб (Ожидалось: ~153 руб)`);
+            console.log(`Рассчитанная стоимость: ${price} руб (Ожидалось: ~132.6 руб)`);
             console.log(`Пиковый коэффициент (isPeak): ${ride?.isPeak ?? ride?.is_peak}`);
             if (!pass) hasErrors = true;
         } catch (err) {

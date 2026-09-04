@@ -157,14 +157,14 @@ async function calculateDistanceKm(client, startLon, startLat, endLon, endLat) {
 }
 
 /**
- * Расчет базовой стоимости поездки: Дистанция (км) * 6 руб (с коэффициентом 1.5 в часы пик)
+ * Расчет базовой стоимости поездки: Дистанция (км) * 6 руб (с коэффициентом 1.3 в часы пик)
  * @param {number} distanceKm - Дистанция поездки в километрах
  * @param {boolean} isPeak - Флаг часа пик
  * @returns {number} Рассчитанная цена
  */
 function calculateBasePrice(distanceKm, isPeak) {
     const ratePerKm = 6;
-    const peakMultiplier = isPeak ? 1.5 : 1.0;
+    const peakMultiplier = isPeak ? 1.3 : 1.0;
     const price = distanceKm * ratePerKm * peakMultiplier;
     return Math.round(price * 100) / 100;
 }
