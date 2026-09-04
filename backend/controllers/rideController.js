@@ -39,8 +39,8 @@ function resolvePointCoordinates(input, fallback) {
     }
 
     if (typeof input === 'object') {
-        const lon = Number(input.lon ?? input.lng ?? input.x);
-        const lat = Number(input.lat ?? input.y);
+        const lon = Number(input.lon ?? input.lng ?? input.x ?? input.longitude);
+        const lat = Number(input.lat ?? input.y ?? input.latitude);
         if (!isNaN(lon) && !isNaN(lat)) {
             return { lon, lat, name: input.name || 'Точка на карте' };
         }
@@ -98,6 +98,156 @@ function extractUserId(req) {
 }
 
 /**
+ * Определение, попадает ли время отправления в часы пик
+ * Часы пик: с 07:30 до 09:30 и с 17:00 до 19:00 (время Екатеринбурга)
+ * @param {Date|string} dateInput - Время отправления
+ * @returns {boolean} true, если время в интервале часа пик
+ */
+function isPeakHour(dateInput) {
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(date.getTime())) {
+        return false;
+    }
+
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: process.env.APP_TIMEZONE || 'Asia/Yekaterinburg',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const hourPart = parts.find((p) => p.type === 'hour');
+    const minutePart = parts.find((p) => p.type === 'minute');
+
+    if (!hourPart || !minutePart) {
+        return false;
+    }
+
+    const hours = parseInt(hourPart.value, 10);
+    const minutes = parseInt(minutePart.value, 10);
+    const totalMinutes = hours * 60 + minutes;
+
+    // Утренний час пик: с 07:30 (450 мин) до 09:30 (570 мин)
+    const isMorningPeak = totalMinutes >= 450 && totalMinutes <= 570;
+    // Вечерний час пик: с 17:00 (1020 мин) до 19:00 (1140 мин)
+    const isEveningPeak = totalMinutes >= 1020 && totalMinutes <= 1140;
+
+    return isMorningPeak || isEveningPeak;
+}
+
+/**
+ * Расчет расстояния между двумя точками в километрах через PostGIS
+ * @param {import('pg').PoolClient} client - Клиент PostgreSQL
+ * @param {number} startLon - Долгота отправления
+ * @param {number} startLat - Широта отправления
+ * @param {number} endLon - Долгота назначения
+ * @param {number} endLat - Широта назначения
+ * @returns {Promise<number>} Дистанция в километрах
+ */
+async function calculateDistanceKm(client, startLon, startLat, endLon, endLat) {
+    const query = `
+        SELECT ST_DistanceSphere(
+            ST_SetSRID(ST_MakePoint($1, $2), 4326),
+            ST_SetSRID(ST_MakePoint($3, $4), 4326)
+        ) as distance_meters
+    `;
+    const res = await client.query(query, [startLon, startLat, endLon, endLat]);
+    const meters = parseFloat(res.rows[0]?.distance_meters) || 0;
+    return Math.round((meters / 1000) * 100) / 100;
+}
+
+/**
+ * Расчет базовой стоимости поездки: Дистанция (км) * 15 руб (с коэффициентом 1.5 в часы пик)
+ * @param {number} distanceKm - Дистанция поездки в километрах
+ * @param {boolean} isPeak - Флаг часа пик
+ * @returns {number} Рассчитанная цена
+ */
+function calculateBasePrice(distanceKm, isPeak) {
+    const ratePerKm = 15;
+    const peakMultiplier = isPeak ? 1.5 : 1.0;
+    const price = distanceKm * ratePerKm * peakMultiplier;
+    return Math.round(price * 100) / 100;
+}
+
+/**
+ * Валидация и парсинг радиуса поиска в метрах
+ * @param {string|number|undefined} radiusInput - Значение радиуса
+ * @returns {{radius: number, error: string|null}}
+ */
+function parseSearchRadius(radiusInput) {
+    if (radiusInput === undefined || radiusInput === null || String(radiusInput).trim() === '') {
+        return { radius: 1000, error: null };
+    }
+    const num = Number(radiusInput);
+    if (isNaN(num) || num <= 0) {
+        return { radius: 0, error: 'Параметр radius должен быть положительным числом' };
+    }
+    return { radius: num, error: null };
+}
+
+/**
+ * Валидация пары координат широты и долготы
+ * @param {any} latVal - Широта
+ * @param {any} lonVal - Долгота
+ * @param {string} pointName - Название точки для сообщения об ошибке
+ * @returns {{point: {lat: number, lon: number}|null, error: string|null}}
+ */
+function validateCoordinates(latVal, lonVal, pointName) {
+    const hasLat = latVal !== undefined && latVal !== null && String(latVal).trim() !== '';
+    const hasLon = lonVal !== undefined && lonVal !== null && String(lonVal).trim() !== '';
+
+    if (!hasLat && !hasLon) {
+        return { point: null, error: null };
+    }
+
+    if (!hasLat || !hasLon) {
+        return { point: null, error: `Для ${pointName} необходимо передать как широту (lat), так и долготу (lon)` };
+    }
+
+    const lat = Number(latVal);
+    const lon = Number(lonVal);
+
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        return { point: null, error: `Параметры ${pointName} должны содержать корректные географические координаты` };
+    }
+
+    return { point: { lat, lon }, error: null };
+}
+
+/**
+ * Преобразование строки БД в стандартизированный объект поездки
+ * @param {object} row - Данные поездки из БД
+ * @returns {object} Форматированный объект поездки
+ */
+function mapRideRow(row) {
+    const isPeak = isPeakHour(row.departure_time);
+    const distanceKm = Number(row.distance_km || 0);
+    return {
+        id: row.id,
+        driver_id: row.driver_id,
+        driver_name: row.driver_first_name || row.driver_username || 'Водитель',
+        driver_phone: row.driver_phone || null,
+        driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
+        departure_time: row.departure_time,
+        start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
+        end_coords: { lon: Number(row.end_lon), lat: Number(row.end_lat) },
+        start_lon: Number(row.start_lon),
+        start_lat: Number(row.start_lat),
+        end_lon: Number(row.end_lon),
+        end_lat: Number(row.end_lat),
+        distance_km: distanceKm,
+        distanceKm: distanceKm,
+        is_peak: isPeak,
+        isPeak: isPeak,
+        base_price: Number(row.base_price),
+        total_seats: row.total_seats,
+        available_seats: row.available_seats,
+        status: row.status,
+        created_at: row.created_at
+    };
+}
+
+/**
  * Создание новой поездки
  * POST /api/rides
  */
@@ -117,7 +267,6 @@ async function createRide(req, res) {
     );
 
     const departureTime = parseDepartureTime(req.body.departure_time || req.body.time);
-    const basePrice = Math.max(0, parseFloat(req.body.base_price || req.body.price || 150));
     const totalSeats = Math.max(1, parseInt(req.body.total_seats || 4, 10));
     const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats || totalSeats, 10)));
 
@@ -125,10 +274,32 @@ async function createRide(req, res) {
     try {
         await client.query('BEGIN');
 
-        const driverCheck = await client.query('SELECT id FROM users WHERE id = $1', [driverId]);
+        const driverCheck = await client.query(
+            'SELECT id, username, first_name, last_name, phone, rating FROM users WHERE id = $1',
+            [driverId]
+        );
         if (driverCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Водитель с указанным ID не найден в базе данных' });
+        }
+
+        const distanceKm = await calculateDistanceKm(client, startCoords.lon, startCoords.lat, endCoords.lon, endCoords.lat);
+        const isPeak = isPeakHour(departureTime);
+
+        let basePrice;
+        const hasCustomPrice = (req.body.base_price !== undefined && req.body.base_price !== null && String(req.body.base_price).trim() !== '') ||
+                               (req.body.price !== undefined && req.body.price !== null && String(req.body.price).trim() !== '');
+
+        if (hasCustomPrice) {
+            const rawVal = req.body.base_price !== undefined ? req.body.base_price : req.body.price;
+            const parsedVal = parseFloat(rawVal);
+            if (isNaN(parsedVal) || parsedVal < 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Указана некорректная стоимость поездки' });
+            }
+            basePrice = Math.round(parsedVal * 100) / 100;
+        } else {
+            basePrice = calculateBasePrice(distanceKm, isPeak);
         }
 
         const insertQuery = `
@@ -159,6 +330,7 @@ async function createRide(req, res) {
                 ST_Y(start_point) as start_lat,
                 ST_X(end_point) as end_lon,
                 ST_Y(end_point) as end_lat,
+                ROUND((ST_DistanceSphere(start_point, end_point) / 1000.0)::numeric, 2) as distance_km,
                 base_price,
                 total_seats,
                 available_seats,
@@ -180,9 +352,19 @@ async function createRide(req, res) {
 
         await client.query('COMMIT');
 
+        const driverInfo = driverCheck.rows[0];
+        const combinedRow = {
+            ...result.rows[0],
+            driver_username: driverInfo.username,
+            driver_first_name: driverInfo.first_name,
+            driver_last_name: driverInfo.last_name,
+            driver_phone: driverInfo.phone,
+            driver_rating: driverInfo.rating
+        };
+
         return res.status(201).json({
             message: 'Поездка успешно создана',
-            ride: result.rows[0]
+            ride: mapRideRow(combinedRow)
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -194,53 +376,93 @@ async function createRide(req, res) {
 }
 
 /**
- * Получение списка поездок
+ * Получение списка поездок с поддержкой гео-фильтрации
  * GET /api/rides
  */
 async function getRides(req, res) {
-    try {
-        const selectQuery = `
-            SELECT 
-                r.id,
-                r.driver_id,
-                u.username as driver_username,
-                u.first_name as driver_first_name,
-                u.last_name as driver_last_name,
-                u.phone as driver_phone,
-                u.rating as driver_rating,
-                r.departure_time,
-                ST_X(r.start_point) as start_lon,
-                ST_Y(r.start_point) as start_lat,
-                ST_X(r.end_point) as end_lon,
-                ST_Y(r.end_point) as end_lat,
-                r.base_price,
-                r.total_seats,
-                r.available_seats,
-                r.status,
-                r.created_at
-            FROM rides r
-            LEFT JOIN users u ON r.driver_id = u.id
-            WHERE r.status = 'scheduled' AND r.departure_time > NOW()
-            ORDER BY r.departure_time ASC
-            LIMIT 50
-        `;
+    const { start_lat, start_lon, end_lat, end_lon, radius, departure_time, time } = req.query;
 
-        const result = await pool.query(selectQuery);
-        const rides = result.rows.map((row) => ({
-            id: row.id,
-            driver_id: row.driver_id,
-            driver_name: row.driver_first_name || row.driver_username || 'Водитель',
-            driver_phone: row.driver_phone,
-            driver_rating: row.driver_rating !== null ? Number(row.driver_rating) : null,
-            departure_time: row.departure_time,
-            start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
-            end_coords: { lon: Number(row.end_lon), lat: Number(row.end_lat) },
-            base_price: Number(row.base_price),
-            total_seats: row.total_seats,
-            available_seats: row.available_seats,
-            status: row.status,
-            created_at: row.created_at
-        }));
+    const radiusResult = parseSearchRadius(radius);
+    if (radiusResult.error) {
+        return res.status(400).json({ error: radiusResult.error });
+    }
+    const searchRadius = radiusResult.radius;
+
+    const startCheck = validateCoordinates(start_lat, start_lon, 'точки посадки (start)');
+    if (startCheck.error) {
+        return res.status(400).json({ error: startCheck.error });
+    }
+
+    const endCheck = validateCoordinates(end_lat, end_lon, 'точки высадки (end)');
+    if (endCheck.error) {
+        return res.status(400).json({ error: endCheck.error });
+    }
+
+    const conditions = ["r.status = 'scheduled'"];
+    const params = [];
+
+    // Фильтр по времени отправления
+    if (departure_time || time) {
+        const parsedTime = parseDepartureTime(departure_time || time);
+        params.push(parsedTime);
+        conditions.push(`r.departure_time >= $${params.length}`);
+    } else {
+        conditions.push('r.departure_time > NOW()');
+    }
+
+    // Гео-фильтр по точке отправления водителя относительно точки посадки пассажира
+    if (startCheck.point) {
+        params.push(startCheck.point.lon);
+        params.push(startCheck.point.lat);
+        params.push(searchRadius);
+        const lonIdx = params.length - 2;
+        const latIdx = params.length - 1;
+        const radIdx = params.length;
+        conditions.push(`ST_DWithin(r.start_point::geography, ST_SetSRID(ST_MakePoint($${lonIdx}, $${latIdx}), 4326)::geography, $${radIdx})`);
+    }
+
+    // Гео-фильтр по точке назначения водителя относительно точки высадки пассажира
+    if (endCheck.point) {
+        params.push(endCheck.point.lon);
+        params.push(endCheck.point.lat);
+        params.push(searchRadius);
+        const lonIdx = params.length - 2;
+        const latIdx = params.length - 1;
+        const radIdx = params.length;
+        conditions.push(`ST_DWithin(r.end_point::geography, ST_SetSRID(ST_MakePoint($${lonIdx}, $${latIdx}), 4326)::geography, $${radIdx})`);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const selectQuery = `
+        SELECT 
+            r.id,
+            r.driver_id,
+            u.username as driver_username,
+            u.first_name as driver_first_name,
+            u.last_name as driver_last_name,
+            u.phone as driver_phone,
+            u.rating as driver_rating,
+            r.departure_time,
+            ST_X(r.start_point) as start_lon,
+            ST_Y(r.start_point) as start_lat,
+            ST_X(r.end_point) as end_lon,
+            ST_Y(r.end_point) as end_lat,
+            ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+            r.base_price,
+            r.total_seats,
+            r.available_seats,
+            r.status,
+            r.created_at
+        FROM rides r
+        LEFT JOIN users u ON r.driver_id = u.id
+        WHERE ${whereClause}
+        ORDER BY r.departure_time ASC
+        LIMIT 50
+    `;
+
+    try {
+        const result = await pool.query(selectQuery, params);
+        const rides = result.rows.map(mapRideRow);
 
         return res.json({ count: rides.length, rides });
     } catch (err) {
@@ -405,5 +627,8 @@ module.exports = {
     createRide,
     getRides,
     joinRide,
-    leaveRide
+    leaveRide,
+    isPeakHour,
+    calculateDistanceKm,
+    calculateBasePrice
 };
