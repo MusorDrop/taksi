@@ -3,12 +3,6 @@ scratch/
 .repomix-output.*
 .artifacts/
 
-# Antigravity Project Scaffolding
-.agents/
-GEMINI.md
-repomix.config.json
-.repomixignore
-
 # IDE / Editor
 .vscode/
 .idea/
