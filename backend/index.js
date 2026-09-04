@@ -1,14 +1,26 @@
+﻿require('dotenv').config();
 const express = require('express');
-const app = express();
-const port = 3000;
+const cors = require('cors');
+const pool = require('./db');
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middlewares
+app.use(cors());
 app.use(express.json());
 
-// Базовый маршрут
-app.get('/', (req, res) => {
-  res.send('API Попутка ИИ работает! (Express.js)');
+// Базовый роут проверки здоровья сервера
+app.get('/api/health', async (req, res) => {
+    try {
+        const dbRes = await pool.query('SELECT NOW()');
+        res.json({ status: 'ok', time: dbRes.rows[0].now, message: 'Сервер работает, БД подключена!' });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: 'Ошибка подключения к БД' });
+    }
 });
 
-app.listen(port, () => {
-  console.log(`Сервер запущен на http://localhost:${port}`);
+// Запуск сервера
+app.listen(PORT, () => {
+    console.log(`Сервер запущен на порту ${PORT}`);
 });
