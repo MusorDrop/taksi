@@ -115,10 +115,8 @@ DATABASE_URL=postgres://postgres:password@localhost:5432/taksi
 erDiagram
     USERS ||--o{ VEHICLES : owns
     USERS ||--o{ RIDES : "drives"
-    USERS ||--o{ RIDE_REQUESTS : "requests"
     USERS ||--o{ REVIEWS : "writes/receives"
     RIDES ||--o{ MATCHES : "contains"
-    RIDE_REQUESTS ||--o| MATCHES : "fulfilled_by"
     USERS ||--o{ MATCHES : "rides_as_passenger"
 
     USERS {
@@ -160,22 +158,10 @@ erDiagram
         timestamp created_at
     }
 
-    RIDE_REQUESTS {
-        uuid id PK
-        uuid passenger_id FK
-        geometry start_point "PostGIS Point (4326) - Откуда"
-        geometry end_point "PostGIS Point (4326) - Куда"
-        timestamp desired_time "Желаемое время"
-        int time_window_minutes "Окно гибкости (напр. ±15 мин)"
-        enum status "pending, matched, cancelled"
-        timestamp created_at
-    }
-
     MATCHES {
         uuid id PK
         uuid ride_id FK
         uuid passenger_id FK
-        uuid request_id FK
         geometry pickup_point "PostGIS Point (4326) - Точка посадки"
         geometry dropoff_point "PostGIS Point (4326) - Точка высадки"
         decimal agreed_price "Итоговая цена поездки"

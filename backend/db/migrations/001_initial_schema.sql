@@ -18,11 +18,6 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-DO $$ BEGIN
-    CREATE TYPE ride_request_status AS ENUM ('pending', 'matched', 'cancelled');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
 
 DO $$ BEGIN
     CREATE TYPE match_status AS ENUM ('accepted', 'completed', 'cancelled');
@@ -73,24 +68,11 @@ CREATE TABLE IF NOT EXISTS rides (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Таблица запросов на поездку от пассажиров
-CREATE TABLE IF NOT EXISTS ride_requests (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    passenger_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    start_point GEOMETRY(Point, 4326) NOT NULL,
-    end_point GEOMETRY(Point, 4326) NOT NULL,
-    desired_time TIMESTAMP WITH TIME ZONE NOT NULL,
-    time_window_minutes INTEGER NOT NULL DEFAULT 15,
-    status ride_request_status NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Таблица совпадений (бронирований поездок)
 CREATE TABLE IF NOT EXISTS matches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ride_id UUID NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
     passenger_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    request_id UUID REFERENCES ride_requests(id) ON DELETE SET NULL,
     pickup_point GEOMETRY(Point, 4326),
     dropoff_point GEOMETRY(Point, 4326),
     agreed_price NUMERIC(10, 2) NOT NULL,
@@ -115,10 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_rides_departure_time ON rides(departure_time);
 CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
 CREATE INDEX IF NOT EXISTS idx_rides_start_point ON rides USING GIST (start_point);
 CREATE INDEX IF NOT EXISTS idx_rides_end_point ON rides USING GIST (end_point);
-
-CREATE INDEX IF NOT EXISTS idx_ride_requests_passenger_id ON ride_requests(passenger_id);
-CREATE INDEX IF NOT EXISTS idx_ride_requests_start_point ON ride_requests USING GIST (start_point);
-CREATE INDEX IF NOT EXISTS idx_ride_requests_end_point ON ride_requests USING GIST (end_point);
 
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id ON matches(ride_id);
 CREATE INDEX IF NOT EXISTS idx_matches_passenger_id ON matches(passenger_id);
