@@ -1,4 +1,4 @@
-﻿const { Pool } = require('pg');
+const { Pool } = require('pg');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -7,7 +7,6 @@ const pool = new Pool({
 
 pool.on('error', (err) => {
     console.error('Непредвиденная ошибка в БД', err);
-    process.exit(-1);
 });
 
 module.exports = pool;

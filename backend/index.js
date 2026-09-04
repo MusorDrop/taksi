@@ -1,14 +1,18 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const pool = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
+// Защита HTTP-заголовков с помощью Helmet
+app.use(helmet());
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:5173' }));
-app.use(express.json());
+// Ограничение размера JSON тела запроса во избежание DoS-атак
+app.use(express.json({ limit: '16kb' }));
 
 // Роуты API
 const authRoutes = require('./routes/authRoutes');

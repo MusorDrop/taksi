@@ -121,9 +121,13 @@ async function createRide(req, res) {
     const totalSeats = Math.max(1, parseInt(req.body.total_seats || 4, 10));
     const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats || totalSeats, 10)));
 
+    const client = await pool.connect();
     try {
-        const driverCheck = await pool.query('SELECT id FROM users WHERE id = $1', [driverId]);
+        await client.query('BEGIN');
+
+        const driverCheck = await client.query('SELECT id FROM users WHERE id = $1', [driverId]);
         if (driverCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Водитель с указанным ID не найден в базе данных' });
         }
 
@@ -162,7 +166,7 @@ async function createRide(req, res) {
                 created_at
         `;
 
-        const result = await pool.query(insertQuery, [
+        const result = await client.query(insertQuery, [
             driverId,
             departureTime,
             startCoords.lon,
@@ -174,13 +178,18 @@ async function createRide(req, res) {
             availableSeats
         ]);
 
+        await client.query('COMMIT');
+
         return res.status(201).json({
             message: 'Поездка успешно создана',
             ride: result.rows[0]
         });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Ошибка создания поездки:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при создании поездки' });
+    } finally {
+        client.release();
     }
 }
 

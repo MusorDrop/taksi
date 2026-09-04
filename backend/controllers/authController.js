@@ -76,6 +76,20 @@ async function register(req, res) {
         });
     }
 
+    // Проверка пароля на пустоту и минимальную длину (не менее 8 символов)
+    if (typeof password !== 'string' || !password.trim()) {
+        return res.status(400).json({
+            error: 'Пароль не может быть пустым'
+        });
+    }
+
+    const trimmedPassword = password.trim();
+    if (trimmedPassword.length < 8) {
+        return res.status(400).json({
+            error: 'Пароль должен содержать как минимум 8 символов'
+        });
+    }
+
     // Строгая валидация роли пользователя
     const ALLOWED_ROLES = ['driver', 'passenger', 'both'];
     const userRole = role !== undefined ? role : 'both';
@@ -88,7 +102,7 @@ async function register(req, res) {
     try {
         const newUser = await registerUser({
             username: trimmedUsername,
-            password,
+            password: trimmedPassword,
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
             phone: phone ? phone.trim() : null,
@@ -127,8 +141,16 @@ async function login(req, res) {
         });
     }
 
+    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
+    const trimmedPassword = typeof password === 'string' ? password.trim() : '';
+
+    if (!trimmedUsername || !trimmedPassword) {
+        return res.status(400).json({
+            error: 'Поля username и password обязательны для заполнения'
+        });
+    }
+
     try {
-        const trimmedUsername = username.trim();
         const userQuery = 'SELECT * FROM users WHERE username = $1';
         const result = await pool.query(userQuery, [trimmedUsername]);
 
@@ -137,7 +159,7 @@ async function login(req, res) {
         }
 
         const user = result.rows[0];
-        const isMatch = await bcrypt.compare(password, user.password_hash);
+        const isMatch = await bcrypt.compare(trimmedPassword, user.password_hash);
 
         if (!isMatch) {
             return res.status(401).json({ error: 'Неверный пароль' });
