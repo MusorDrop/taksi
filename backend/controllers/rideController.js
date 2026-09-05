@@ -217,17 +217,6 @@ function validateCoordinates(latVal, lonVal, pointName) {
 }
 
 /**
- * Расчет стоимости поездки (отмена Split Fare: строго фиксированная цена за 1 место)
- * Базовая цена = текущая цена
- * @param {number} price - Стоимость поездки за 1 место
- * @returns {number} Фиксированная стоимость поездки
- */
-function calculateCurrentPrice(price) {
-    const numericPrice = Number(price) || 0;
-    return numericPrice;
-}
-
-/**
  * Преобразование строки БД в стандартизированный объект поездки с фиксированной ценой
  * @param {object} row - Данные поездки из БД
  * @returns {object} Форматированный объект поездки
@@ -239,7 +228,7 @@ function mapRideRow(row) {
         ? row.passenger_ids.map(String)
         : [];
     const basePrice = Number(row.base_price || 0);
-    const currentPrice = calculateCurrentPrice(basePrice);
+    const currentPrice = basePrice;
 
     let passengers = [];
     if (Array.isArray(row.passengers)) {
@@ -686,8 +675,7 @@ async function joinRide(req, res) {
 
         const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
         const passengers = passengersRes.rows[0]?.passengers || [];
-        const price = Number(ride.base_price);
-        const current_price = calculateCurrentPrice(price);
+        const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
 
@@ -783,8 +771,7 @@ async function leaveRide(req, res) {
 
         const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
         const passengers = passengersRes.rows[0]?.passengers || [];
-        const price = Number(ride.base_price);
-        const current_price = calculateCurrentPrice(price);
+        const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
 
@@ -1162,7 +1149,6 @@ module.exports = {
     leaveRide,
     updateRide,
     kickPassenger,
-    calculateCurrentPrice,
     isPeakHour,
     calculateDistanceKm,
     calculateBasePrice
