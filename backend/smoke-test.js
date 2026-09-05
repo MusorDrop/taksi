@@ -9,6 +9,9 @@ async function runSmokeTests() {
     const testResults = [];
     let createdDriverId = null;
     let createdRideId = null;
+    let createdPassengerId = null;
+    let driverToken = null;
+    let passengerToken = null;
 
     // Запуск сервера на случайном свободном порту
     const server = await new Promise((resolve) => {
@@ -154,7 +157,7 @@ async function runSmokeTests() {
             `);
             createdDriverId = driverInsert.rows[0].id;
 
-            const driverToken = jwt.sign(
+            driverToken = jwt.sign(
                 { id: createdDriverId, username: 'smoke_test_driver', role: 'driver' },
                 JWT_SECRET,
                 { expiresIn: '1h' }
@@ -256,15 +259,103 @@ async function runSmokeTests() {
             hasErrors = true;
         }
 
+        // Тест 8: Отправка отзыва водителю и проверка обновления average_rating в /api/auth/me
+        console.log('\n--- Тест 8: POST /api/reviews и проверка GET /api/auth/me (обновление рейтинга) ---');
+        try {
+            // Очищаем предыдущие данные тестового пассажира, если они остались
+            await pool.query("DELETE FROM users WHERE username = 'smoke_test_passenger'");
+
+            // Создаем тестового пассажира
+            const passengerInsert = await pool.query(`
+                INSERT INTO users (username, password_hash, first_name, last_name, role)
+                VALUES ('smoke_test_passenger', '$2a$10$dummyhashfortestusersmoke000000000000000000000000000000', 'ТестПассажир', 'Дымовой', 'passenger')
+                RETURNING id, username, role
+            `);
+            createdPassengerId = passengerInsert.rows[0].id;
+
+            passengerToken = jwt.sign(
+                { id: createdPassengerId, username: 'smoke_test_passenger', role: 'passenger' },
+                JWT_SECRET,
+                { expiresIn: '1h' }
+            );
+
+            // 1. Отправляем отзыв водителю от лица пассажира
+            const reviewRes = await fetch(`${baseUrl}/api/reviews`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${passengerToken}`
+                },
+                body: JSON.stringify({
+                    ride_id: createdRideId,
+                    reviewee_id: createdDriverId,
+                    rating: 5,
+                    comment: 'Отличная поездка, водитель пунктуальный!'
+                })
+            });
+
+            const reviewStatus = reviewRes.status;
+            const reviewData = await reviewRes.json();
+            const reviewCreated = reviewStatus === 201 && reviewData.review && reviewData.review.rating === 5;
+
+            console.log(`Создание отзыва (POST /api/reviews): статус ${reviewStatus} (Ожидался: 201)`);
+            console.log(`Ответ отзыва:`, JSON.stringify(reviewData, null, 2));
+
+            // 2. Делаем запрос к /api/auth/me водителя и проверяем, что average_rating обновился
+            const driverMeRes = await fetch(`${baseUrl}/api/auth/me`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${driverToken}`
+                }
+            });
+
+            const driverMeStatus = driverMeRes.status;
+            const driverMeData = await driverMeRes.json();
+            const avgRating = driverMeData.average_rating ?? driverMeData.user?.average_rating;
+
+            console.log(`Запрос профиля водителя (GET /api/auth/me): статус ${driverMeStatus} (Ожидался: 200)`);
+            console.log(`Средний рейтинг водителя (average_rating): ${avgRating} (Ожидался: 5)`);
+
+            const pass = reviewCreated &&
+                         driverMeStatus === 200 &&
+                         avgRating === 5;
+
+            testResults.push({
+                test: 'POST /api/reviews & GET /api/auth/me (average_rating update)',
+                expectedStatus: 201,
+                actualStatus: reviewStatus,
+                passed: pass,
+                details: {
+                    reviewStatus,
+                    driverMeStatus,
+                    average_rating: avgRating
+                }
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании отзывов и рейтинга:', err.message);
+            testResults.push({ test: 'POST /api/reviews & GET /api/auth/me rating update', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
     } finally {
         // Очистка тестовых данных
         if (createdRideId) {
             try {
+                await pool.query('DELETE FROM reviews WHERE ride_id = $1', [createdRideId]);
                 await pool.query('DELETE FROM rides WHERE id = $1', [createdRideId]);
+            } catch (_) {}
+        }
+        if (createdPassengerId) {
+            try {
+                await pool.query('DELETE FROM reviews WHERE reviewer_id = $1 OR reviewee_id = $1', [createdPassengerId]);
+                await pool.query('DELETE FROM users WHERE id = $1', [createdPassengerId]);
             } catch (_) {}
         }
         if (createdDriverId) {
             try {
+                await pool.query('DELETE FROM reviews WHERE reviewer_id = $1 OR reviewee_id = $1', [createdDriverId]);
                 await pool.query('DELETE FROM users WHERE id = $1', [createdDriverId]);
             } catch (_) {}
         }
