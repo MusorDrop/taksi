@@ -11,6 +11,7 @@ export interface User {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  telegramUsername: string | null;
   role: UserRole;
   rating: number | null;
   isVerified: boolean;
@@ -24,6 +25,7 @@ export interface Ride {
   driverId: string;
   driverName: string;
   driverPhone: string | null;
+  driverTelegramUsername: string | null;
   driverRating: number | null;
   departureTime: string;
   start: GeoPoint;
@@ -55,6 +57,17 @@ export interface CreateRidePayload {
   departureTime: string;
   totalSeats?: number;
   price?: number;
+}
+
+/** Пассажир поездки (виден водителю в «Мои поездки») */
+export interface RidePassenger {
+  id: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+  rating: number | null;
+  telegramUsername: string | null;
+  joinedAt: string;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';

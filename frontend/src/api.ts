@@ -1,7 +1,9 @@
 import type {
   CreateRidePayload,
+  GeoPoint,
   MyTrips,
   Ride,
+  RidePassenger,
   RideSearchParams,
   User,
 } from './types';
@@ -77,6 +79,7 @@ interface RawUser {
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
+  telegram_username: string | null;
   role: User['role'];
   rating: string | null;
   is_verified: boolean;
@@ -88,6 +91,7 @@ interface RawRide {
   driver_id: string;
   driver_name: string | null;
   driver_phone: string | null;
+  driver_telegram_username: string | null;
   driver_rating: string | null;
   departure_time: string;
   start_lat: number;
@@ -112,6 +116,7 @@ function mapUser(raw: RawUser): User {
     firstName: raw.first_name,
     lastName: raw.last_name,
     phone: raw.phone,
+    telegramUsername: raw.telegram_username,
     role: raw.role,
     rating: raw.rating !== null && raw.rating !== undefined ? Number(raw.rating) : null,
     isVerified: raw.is_verified,
@@ -126,6 +131,7 @@ function mapRide(raw: RawRide): Ride {
     driverId: raw.driver_id,
     driverName: raw.driver_name || 'Водитель',
     driverPhone: raw.driver_phone,
+    driverTelegramUsername: raw.driver_telegram_username,
     driverRating:
       raw.driver_rating !== null && raw.driver_rating !== undefined
         ? Number(raw.driver_rating)
@@ -149,7 +155,8 @@ export interface RegisterPayload {
   password: string;
   first_name?: string;
   last_name?: string;
-  phone?: string;
+  /** Telegram username (без @) — вместо номера телефона */
+  telegram_username?: string;
   role?: User['role'];
 }
 
@@ -235,4 +242,92 @@ export async function apiMyTrips(): Promise<MyTrips> {
     driverRides: (data.driver_rides ?? []).map(mapRide),
     passengerRides: (data.passenger_rides ?? []).map(mapRide),
   };
+}
+
+/** Ответ со списком пассажиров поездки */
+export interface RidePassengersResponse {
+  passengers: RidePassenger[];
+  totalSeats: number;
+  availableSeats: number;
+}
+
+/** Список пассажиров поездки (доступно только водителю): GET /rides/:id/passengers */
+export async function apiRidePassengers(rideId: string): Promise<RidePassengersResponse> {
+  const data = await request<{
+    passengers: Array<{
+      id: string;
+      username: string;
+      first_name: string | null;
+      last_name: string | null;
+      rating: number | string | null;
+      telegram_username: string | null;
+      joined_at: string;
+    }>;
+    total_seats: number;
+    available_seats: number;
+  }>(`/rides/${encodeURIComponent(rideId)}/passengers`);
+  return {
+    passengers: (data.passengers ?? []).map((p) => ({
+      id: p.id,
+      username: p.username,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      rating: p.rating !== null && p.rating !== undefined ? Number(p.rating) : null,
+      telegramUsername: p.telegram_username,
+      joinedAt: p.joined_at,
+    })),
+    totalSeats: data.total_seats,
+    availableSeats: data.available_seats,
+  };
+}
+
+/** Обновление профиля текущего пользователя: Telegram username (null — удалить) */
+export async function apiUpdateProfile(telegramUsername: string | null): Promise<User> {
+  const data = await request<{ user: RawUser }>('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ telegram_username: telegramUsername }),
+  });
+  return mapUser(data.user);
+}
+
+// ---- Гео-сервисы (ключи Яндекс API хранятся на бэкенде) ----
+
+/** Ответ геокодера: found=false — место не найдено; при ошибке сервиса бросается ApiError */
+export interface GeocodeResponse {
+  found: boolean;
+  point: GeoPoint | null;
+  name: string | null;
+  /** Источник координат: 'yandex' или 'osm' (fallback) */
+  source?: string | null;
+}
+
+/** Детали автомобильного маршрута (API «Получение деталей маршрута» Яндекса) */
+export interface RouteDetails {
+  distanceKm: number;
+  durationMin: number;
+  source: string;
+}
+
+/**
+ * Координаты по произвольному названию места (адрес, ТЦ, район) — HTTP Геокодер Яндекса
+ * через бэкенд: GET /api/geo/geocode?text=…
+ * 503 (ключ не настроен) / 502 приходят как ApiError — вызывающий код деградирует на словарь/fallback.
+ */
+export async function apiGeocode(text: string): Promise<GeocodeResponse> {
+  const params = new URLSearchParams({ text });
+  return request<GeocodeResponse>(`/geo/geocode?${params.toString()}`);
+}
+
+/** Расстояние и время в пути по дорогам с учётом пробок: GET /api/geo/route */
+export async function apiRouteDetails(from: GeoPoint, to: GeoPoint): Promise<RouteDetails> {
+  const params = new URLSearchParams({
+    from_lat: String(from.lat),
+    from_lon: String(from.lon),
+    to_lat: String(to.lat),
+    to_lon: String(to.lon),
+  });
+  const data = await request<{ source: string; distance_km: number; duration_min: number }>(
+    `/geo/route?${params.toString()}`,
+  );
+  return { distanceKm: data.distance_km, durationMin: data.duration_min, source: data.source };
 }

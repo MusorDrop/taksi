@@ -15,6 +15,7 @@ function formatUserProfile(user) {
         first_name: user.first_name,
         last_name: user.last_name,
         phone: user.phone,
+        telegram_username: user.telegram_username ?? null,
         role: user.role,
         rating: user.rating !== null ? Number(user.rating) : null,
         is_verified: user.is_verified,
@@ -42,16 +43,16 @@ function createToken(user) {
  * @param {object} params - Параметры нового пользователя
  * @returns {Promise<object>} Созданная запись пользователя
  */
-async function registerUser({ username, password, firstName, lastName, phone, role }) {
+async function registerUser({ username, password, firstName, lastName, phone, telegramUsername, role }) {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
     const query = `
-        INSERT INTO users (username, password_hash, first_name, last_name, phone, role)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO users (username, password_hash, first_name, last_name, phone, telegram_username, role)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
     `;
-    const values = [username, passwordHash, firstName, lastName, phone, role];
+    const values = [username, passwordHash, firstName, lastName, phone, telegramUsername, role];
     const result = await pool.query(query, values);
     return result.rows[0];
 }
@@ -61,7 +62,7 @@ async function registerUser({ username, password, firstName, lastName, phone, ro
  * POST /api/auth/register
  */
 async function register(req, res) {
-    const { username, password, first_name, last_name, phone, role } = req.body;
+    const { username, password, first_name, last_name, phone, telegram_username, role } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({
@@ -88,6 +89,17 @@ async function register(req, res) {
         return res.status(400).json({
             error: 'Номер телефона не может быть длиннее 20 символов'
         });
+    }
+
+    // Telegram username (необязательное поле, вместо телефона): нормализация и валидация формата
+    let telegramUsername = null;
+    if (telegram_username !== undefined && telegram_username !== null && String(telegram_username).trim() !== '') {
+        telegramUsername = String(telegram_username).trim().replace(/^@+/, '');
+        if (!/^[A-Za-z0-9_]{4,32}$/.test(telegramUsername)) {
+            return res.status(400).json({
+                error: 'Telegram username должен содержать от 4 до 32 символов: латинские буквы, цифры и подчёркивания'
+            });
+        }
     }
 
     // Проверка пароля на пустоту и минимальную длину (не менее 8 символов)
@@ -120,6 +132,7 @@ async function register(req, res) {
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
             phone: phone ? phone.trim() : null,
+            telegramUsername,
             role: userRole
         });
 
@@ -132,8 +145,11 @@ async function register(req, res) {
     } catch (err) {
         // Код 23505: нарушение уникальности (Unique violation) в PostgreSQL
         if (err.code === '23505') {
+            const isTelegram = err.constraint === 'users_telegram_username_key';
             return res.status(409).json({
-                error: 'Пользователь с таким именем уже существует'
+                error: isTelegram
+                    ? 'Этот Telegram username уже используется другим пользователем'
+                    : 'Пользователь с таким именем уже существует'
             });
         }
 
@@ -215,10 +231,63 @@ async function getProfile(req, res) {
     }
 }
 
+/**
+ * Обновление профиля текущего пользователя
+ * PATCH /api/auth/me
+ * Тело: { telegram_username?: string | null } — Telegram-имя для связи (можно с @ или без)
+ */
+async function updateProfile(req, res) {
+    if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const { telegram_username } = req.body;
+    if (telegram_username === undefined) {
+        return res.status(400).json({ error: 'Не передано поле telegram_username' });
+    }
+
+    // Нормализация: обрезаем пробелы и ведущий @; пустая строка/null — удалить имя
+    let normalized = null;
+    if (telegram_username !== null && String(telegram_username).trim() !== '') {
+        normalized = String(telegram_username).trim().replace(/^@+/, '');
+        if (!/^[A-Za-z0-9_]{4,32}$/.test(normalized)) {
+            return res.status(400).json({
+                error: 'Telegram username должен содержать от 4 до 32 символов: латинские буквы, цифры и подчёркивания'
+            });
+        }
+    }
+
+    try {
+        const query = `
+            UPDATE users
+            SET telegram_username = $1
+            WHERE id = $2
+            RETURNING *
+        `;
+        const result = await pool.query(query, [normalized, req.user.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+        return res.json({
+            message: 'Профиль обновлён',
+            user: formatUserProfile(result.rows[0])
+        });
+    } catch (err) {
+        if (err.code === '23505' && err.constraint === 'users_telegram_username_key') {
+            return res.status(409).json({
+                error: 'Этот Telegram username уже используется другим пользователем'
+            });
+        }
+        console.error('Ошибка обновления профиля:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при обновлении профиля' });
+    }
+}
+
 module.exports = {
     register,
     login,
     getProfile,
+    updateProfile,
     formatUserProfile,
     createToken
 };

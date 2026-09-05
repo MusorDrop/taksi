@@ -25,4 +25,7 @@ router.post('/login', authLimiter, authController.login);
 // Получение профиля текущего пользователя
 router.get('/me', authenticateToken, authController.getProfile);
 
+// Обновление профиля текущего пользователя (telegram_username)
+router.patch('/me', authenticateToken, authController.updateProfile);
+
 module.exports = router;

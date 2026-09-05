@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 import RideCard from '../components/RideCard';
+import PassengersCard from '../components/PassengersCard';
 import { useApp } from '../AppContext';
 
 export default function MyTripsScreen() {
@@ -68,7 +69,10 @@ export default function MyTripsScreen() {
           ) : (
             <Stack spacing={1.5}>
               {driverRides.map((ride) => (
-                <RideCard key={ride.id} ride={ride} isDriver />
+                <Stack key={ride.id} spacing={0}>
+                  <RideCard ride={ride} isDriver attachedBottom />
+                  <PassengersCard ride={ride} attachedTop />
+                </Stack>
               ))}
             </Stack>
           )}

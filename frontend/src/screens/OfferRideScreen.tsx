@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -14,14 +14,15 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AirlineSeatReclineNormalIcon from '@mui/icons-material/AirlineSeatReclineNormal';
 import RouteMap from '../components/RouteMap';
 import { useApp } from '../AppContext';
+import { apiRouteDetails, type RouteDetails } from '../api';
 import {
   DEFAULT_END,
   DEFAULT_START,
   estimatePrice,
-  geocode,
   haversineKm,
   localDateTimeToIso,
 } from '../geo';
+import { useResolvedPoint, type PointStatus } from '../useResolvedPoint';
 import { formatPrice, isPeakTime } from '../utils';
 
 /**
@@ -47,6 +48,46 @@ function todayIsoWith(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** Живая подсказка под полем точки: что сейчас происходит с её координатами */
+function PointHint({
+  status,
+  text,
+  fallbackName,
+}: {
+  status: PointStatus;
+  text: string;
+  fallbackName: string;
+}) {
+  if (!text.trim() || status === 'known') return null;
+  if (status === 'geocoding') {
+    return (
+      <Typography variant="caption" sx={{ color: 'info.main' }}>
+        Ищем «{text.trim()}» на Яндекс Карте…
+      </Typography>
+    );
+  }
+  if (status === 'geocoded') {
+    return (
+      <Typography variant="caption" sx={{ color: 'success.main' }}>
+        Точка найдена — отмечена на карте
+      </Typography>
+    );
+  }
+  if (status === 'unavailable') {
+    return (
+      <Typography variant="caption" color="warning.main">
+        Онлайн-геокодер недоступен (не настроен ключ на сервере) — известные локации
+        распознаются, для остальных будет точка по умолчанию ({fallbackName}).
+      </Typography>
+    );
+  }
+  return (
+    <Typography variant="caption" color="warning.main">
+      Не удалось определить координаты — будет использована точка по умолчанию ({fallbackName}).
+    </Typography>
+  );
+}
+
 export default function OfferRideScreen() {
   const { addRide } = useApp();
   const [initialSlot] = useState(nextFreeSlot);
@@ -60,9 +101,48 @@ export default function OfferRideScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const start = geocode(from) ?? DEFAULT_START;
-  const end = geocode(to) ?? DEFAULT_END;
-  const distance = Math.round(haversineKm(start, end) * 100) / 100;
+  // Точки: мгновенно из словаря известных локаций, иначе — HTTP Геокодер Яндекса (с дебаунсом)
+  const fromResolved = useResolvedPoint(from, DEFAULT_START);
+  const toResolved = useResolvedPoint(to, DEFAULT_END);
+  const start = fromResolved.point;
+  const end = toResolved.point;
+
+  // Детали маршрута по дорогам: API «Получение деталей маршрута» Яндекса через бэкенд
+  const [routeState, setRouteState] = useState<{
+    key: string;
+    loading: boolean;
+    details: RouteDetails | null;
+  } | null>(null);
+  const routeKey =
+    fromResolved.isExact && toResolved.isExact ? `${from.trim()} → ${to.trim()}` : '';
+
+  useEffect(() => {
+    if (!routeKey) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setRouteState({ key: routeKey, loading: true, details: null });
+      apiRouteDetails(fromResolved.point, toResolved.point)
+        .then((details) => {
+          if (!cancelled) setRouteState({ key: routeKey, loading: false, details });
+        })
+        .catch(() => {
+          if (!cancelled) setRouteState({ key: routeKey, loading: false, details: null });
+        });
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // fromResolved.point / toResolved.point меняются только вместе с текстом (учтён в routeKey)
+  }, [routeKey, fromResolved.point, toResolved.point]);
+
+  // Активен только ответ для текущих точек (защита от гонки запросов)
+  const activeRoute = routeState && routeState.key === routeKey ? routeState : null;
+  const routeLoading = !!activeRoute?.loading;
+  const routeDetails = activeRoute && !activeRoute.loading ? activeRoute.details : null;
+  // Расстояние: реальные дороги (Router API); без ключа — оценка по прямой
+  const roadKm = routeDetails?.distanceKm ?? null;
+  const distance = roadKm ?? Math.round(haversineKm(start, end) * 100) / 100;
   const estimated = estimatePrice(distance, time);
   const peak = isPeakTime(time);
   // Выбранные дата и время выезда: если они в прошлом, бэкенд отклонит публикацию,
@@ -70,8 +150,6 @@ export default function OfferRideScreen() {
   const departureAt = new Date(`${date}T${time || '08:00'}`);
   const departureInPast =
     Number.isNaN(departureAt.getTime()) || departureAt.getTime() <= Date.now();
-  const fromKnown = !from.trim() || Boolean(geocode(from));
-  const toKnown = !to.trim() || Boolean(geocode(to));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,11 +230,7 @@ export default function OfferRideScreen() {
               },
             }}
           />
-          {!fromKnown && (
-            <Typography variant="caption" color="warning.main">
-              Локация не распознана — будет использована точка по умолчанию (Уралмаш).
-            </Typography>
-          )}
+          <PointHint status={fromResolved.status} text={from} fallbackName="Уралмаш" />
           <TextField
             fullWidth
             label="Куда (Точка Б)"
@@ -173,12 +247,36 @@ export default function OfferRideScreen() {
               },
             }}
           />
-          {!toKnown && (
-            <Typography variant="caption" color="warning.main">
-              Локация не распознана — будет использована точка по умолчанию (Новокольцовский).
-            </Typography>
+          <PointHint status={toResolved.status} text={to} fallbackName="Новокольцовский" />
+          <RouteMap
+            from={from || 'Точка А'}
+            to={to || 'Точка Б'}
+            fromPoint={from.trim() && fromResolved.isExact ? start : null}
+            toPoint={to.trim() && toResolved.isExact ? end : null}
+          />
+          {routeLoading && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label="Считаем маршрут по дорогам…"
+              sx={{ alignSelf: 'flex-start' }}
+            />
           )}
-<RouteMap from={from || 'Точка А'} to={to || 'Точка Б'} />
+          {routeDetails && (
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+              <Chip
+                size="small"
+                color="primary"
+                icon={<BoltIcon />}
+                label={`≈ ${routeDetails.durationMin} мин в пути`}
+              />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`${routeDetails.distanceKm} км по дорогам`}
+              />
+            </Stack>
+          )}
 
           <Stack direction="row" spacing={2}>
             <TextField
@@ -254,7 +352,9 @@ export default function OfferRideScreen() {
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Расчётное расстояние
+                  {roadKm !== null
+                    ? 'Расстояние по дорогам'
+                    : 'Расстояние по прямой (оценка)'}
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {distance} км

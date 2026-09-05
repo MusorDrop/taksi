@@ -28,6 +28,7 @@ const RIDE_SELECT = `
             u.last_name as driver_last_name,
             u.phone as driver_phone,
             u.rating as driver_rating,
+            u.telegram_username as driver_telegram_username,
             r.departure_time,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,
@@ -252,6 +253,7 @@ function mapRideRow(row) {
         driver_id: row.driver_id,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_phone: row.driver_phone || null,
+        driver_telegram_username: row.driver_telegram_username || null,
         driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
         departure_time: row.departure_time,
         start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
@@ -325,8 +327,10 @@ async function createRide(req, res) {
     let totalSeats = 4;
     let availableSeats = totalSeats;
 
-    if (req.body.total_seats !== undefined && req.body.total_seats !== null && String(req.body.total_seats).trim() !== '') {
-        totalSeats = parseInt(req.body.total_seats, 10);
+    // Принимаем оба варианта имени поля: total_seats (API) и totalSeats (фронтенд)
+    const rawSeats = req.body.total_seats ?? req.body.totalSeats;
+    if (rawSeats !== undefined && rawSeats !== null && String(rawSeats).trim() !== '') {
+        totalSeats = parseInt(rawSeats, 10);
         if (isNaN(totalSeats) || totalSeats <= 0 || totalSeats > 20) {
             return res.status(400).json({
                 error: 'Параметр total_seats должен быть целым числом от 1 до 20'
@@ -714,10 +718,77 @@ async function getMyRides(req, res) {
     }
 }
 
+/**
+ * Список пассажиров поездки
+ * GET /api/rides/:id/passengers — доступно только водителю этой поездки
+ * Ответ: { passengers: [...], total_seats, available_seats }
+ */
+async function getRidePassengers(req, res) {
+    const userId = extractUserId(req);
+    if (!userId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const rideId = req.params.id;
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный идентификатор поездки' });
+    }
+
+    try {
+        const rideRes = await pool.query(
+            'SELECT driver_id, total_seats, available_seats FROM rides WHERE id = $1',
+            [rideId]
+        );
+        if (rideRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const ride = rideRes.rows[0];
+        if (ride.driver_id !== userId) {
+            return res.status(403).json({ error: 'Список пассажиров доступен только водителю поездки' });
+        }
+
+        // Принятые пассажиры: контакты (Telegram) и время присоединения
+        const passengersRes = await pool.query(
+            `SELECT
+                u.id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                u.rating,
+                u.telegram_username,
+                m.created_at as joined_at
+             FROM matches m
+             JOIN users u ON m.passenger_id = u.id
+             WHERE m.ride_id = $1 AND m.status = 'accepted'
+             ORDER BY m.created_at ASC`,
+            [rideId]
+        );
+
+        return res.json({
+            passengers: passengersRes.rows.map((p) => ({
+                id: p.id,
+                username: p.username,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                rating: p.rating !== null && p.rating !== undefined ? Number(p.rating) : null,
+                telegram_username: p.telegram_username ?? null,
+                joined_at: p.joined_at
+            })),
+            total_seats: ride.total_seats,
+            available_seats: ride.available_seats
+        });
+    } catch (err) {
+        console.error('Ошибка получения списка пассажиров:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка пассажиров' });
+    }
+}
+
 module.exports = {
     createRide,
     getRides,
     getMyRides,
+    getRidePassengers,
     joinRide,
     leaveRide,
     isPeakHour,

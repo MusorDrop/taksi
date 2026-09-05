@@ -22,6 +22,8 @@ app.use(express.json({ limit: '16kb' }));
 // Роуты API
 const authRoutes = require('./routes/authRoutes');
 const rideRoutes = require('./routes/rideRoutes');
+const geoRoutes = require('./routes/geoRoutes');
+
 
 // Базовый роут проверки здоровья сервера
 app.get('/api/health', async (req, res) => {
@@ -36,6 +38,8 @@ app.get('/api/health', async (req, res) => {
 // Подключение роутов
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
+app.use('/api/geo', geoRoutes);
+
 
 // Запуск сервера
 if (require.main === module) {

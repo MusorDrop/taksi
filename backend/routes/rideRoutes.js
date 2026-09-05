@@ -19,4 +19,7 @@ router.post('/:id/join', authenticateToken, rideController.joinRide);
 // Отмена участия пассажира в поездке
 router.post('/:id/leave', authenticateToken, rideController.leaveRide);
 
+// Список пассажиров поездки (доступно только водителю этой поездки)
+router.get('/:id/passengers', authenticateToken, rideController.getRidePassengers);
+
 module.exports = router;

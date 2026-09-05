@@ -12,7 +12,7 @@ import Tab from '@mui/material/Tab';
 import PersonIcon from '@mui/icons-material/Person';
 import LockIcon from '@mui/icons-material/Lock';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
-import PhoneIcon from '@mui/icons-material/Phone';
+import SendIcon from '@mui/icons-material/Send';
 import { useApp } from '../AppContext';
 
 type Mode = 'login' | 'register';
@@ -24,7 +24,7 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [firstName, setFirstName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [telegram, setTelegram] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,7 +56,9 @@ export default function AuthScreen() {
           username: trimmedUser,
           password,
           first_name: firstName.trim() || trimmedUser,
-          phone: phone.trim() || undefined,
+          telegram_username: telegram.trim()
+            ? telegram.trim().replace(/^@+/, '')
+            : undefined,
         });
       }
     } catch (err) {
@@ -154,15 +156,16 @@ export default function AuthScreen() {
             {mode === 'register' && (
               <TextField
                 fullWidth
-                label="Телефон (необязательно)"
-                placeholder="+7 900 000 00 00"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                label="Telegram username (необязательно)"
+                placeholder="durov"
+                value={telegram}
+                onChange={(e) => setTelegram(e.target.value)}
+                helperText="Чтобы пассажиры могли написать вам в Telegram"
                 slotProps={{
                   input: {
                     startAdornment: (
                       <InputAdornment position="start">
-                        <PhoneIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                        <SendIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
                       </InputAdornment>
                     ),
                   },

@@ -16,6 +16,7 @@ import EventIcon from '@mui/icons-material/Event';
 import BoltIcon from '@mui/icons-material/Bolt';
 import StarIcon from '@mui/icons-material/Star';
 import PhoneIcon from '@mui/icons-material/Phone';
+import SendIcon from '@mui/icons-material/Send';
 import type { Ride } from '../types';
 import { formatDateTime, formatPrice, formatSeats } from '../utils';
 import { reverseGeocode } from '../geo';
@@ -24,6 +25,8 @@ interface RideCardProps {
   ride: Ride;
   isPassenger?: boolean;
   isDriver?: boolean;
+  /** Снизу примыкает панель (например, пассажиры) — нижние углы прямые, единый контур */
+  attachedBottom?: boolean;
   onJoin?: () => void;
   onLeave?: () => void;
 }
@@ -32,6 +35,7 @@ export default function RideCard({
   ride,
   isPassenger,
   isDriver,
+  attachedBottom = false,
   onJoin,
   onLeave,
 }: RideCardProps) {
@@ -48,6 +52,9 @@ export default function RideCard({
   const toName = reverseGeocode(ride.end);
   const noSeats = ride.availableSeats <= 0;
   const showJoin = !isDriver && !isPassenger && onJoin && !noSeats;
+  const telegramUrl = ride.driverTelegramUsername
+    ? `https://t.me/${ride.driverTelegramUsername}`
+    : null;
 
   return (
     <Card
@@ -57,6 +64,10 @@ export default function RideCard({
         cursor: 'pointer',
         transition: 'box-shadow 0.2s, border-color 0.2s',
         '&:hover': { borderColor: 'primary.main' },
+        ...(attachedBottom && {
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+        }),
       }}
     >
       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -147,7 +158,7 @@ export default function RideCard({
           <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
             {isDriver ? (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Это ваш маршрут. Пассажиры свяжутся с вами по телефону, указанному в профиле.
+                Это ваш маршрут. Пассажиры — под карточкой: нажмите строку «Пассажиры», чтобы раскрыть список.
               </Typography>
             ) : (
               <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
@@ -199,6 +210,21 @@ export default function RideCard({
                   }}
                 >
                   Присоединиться
+                </Button>
+              )}
+              {!isDriver && telegramUrl && (
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="small"
+                  startIcon={<SendIcon />}
+                  href={telegramUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  sx={{ minWidth: 150 }}
+                >
+                  Написать в Telegram
                 </Button>
               )}
               {!isDriver && !isPassenger && noSeats && (

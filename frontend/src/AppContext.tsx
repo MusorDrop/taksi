@@ -17,6 +17,7 @@ import {
   apiLogin,
   apiMyTrips,
   apiRegister,
+  apiUpdateProfile,
   getToken,
   setToken,
   type RegisterPayload,
@@ -35,6 +36,8 @@ interface AppContextValue {
   joinRide: (rideId: string) => Promise<void>;
   leaveRide: (rideId: string) => Promise<void>;
   addRide: (payload: CreateRidePayload) => Promise<void>;
+  /** Обновить профиль текущего пользователя (telegram_username) */
+  updateProfile: (telegramUsername: string | null) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -135,6 +138,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [searchRides, refreshMyTrips],
   );
 
+  const updateProfile = useCallback(async (telegramUsername: string | null) => {
+    const me = await apiUpdateProfile(telegramUsername);
+    setUser(me);
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -149,6 +157,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         joinRide,
         leaveRide,
         addRide,
+        updateProfile,
       }}
     >
       {children}
