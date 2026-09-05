@@ -217,13 +217,35 @@ function validateCoordinates(latVal, lonVal, pointName) {
 }
 
 /**
- * Преобразование строки БД в стандартизированный объект поездки
+ * Расчет динамической стоимости поездки при разделении цены (Split Fare)
+ * Формула: current_price = Math.ceil(price / Math.max(passenger_ids.length, 1))
+ * @param {number} price - Базовая стоимость всей поездки
+ * @param {Array<string>|number} passengerIds - Список идентификаторов пассажиров или их количество
+ * @returns {number} Динамическая стоимость поездки с одного человека
+ */
+function calculateCurrentPrice(price, passengerIds = []) {
+    const count = Array.isArray(passengerIds)
+        ? passengerIds.length
+        : (Number(passengerIds) || 0);
+    const divisor = Math.max(count, 1);
+    const numericPrice = Number(price) || 0;
+    return Math.ceil(numericPrice / divisor);
+}
+
+/**
+ * Преобразование строки БД в стандартизированный объект поездки с поддержкой Split Fare
  * @param {object} row - Данные поездки из БД
  * @returns {object} Форматированный объект поездки
  */
 function mapRideRow(row) {
     const isPeak = isPeakHour(row.departure_time);
     const distanceKm = Number(row.distance_km || 0);
+    const passengerIds = Array.isArray(row.passenger_ids)
+        ? row.passenger_ids.map(String)
+        : [];
+    const basePrice = Number(row.base_price || 0);
+    const currentPrice = calculateCurrentPrice(basePrice, passengerIds);
+
     return {
         id: row.id,
         driver_id: row.driver_id,
@@ -242,7 +264,12 @@ function mapRideRow(row) {
         distanceKm: distanceKm,
         is_peak: isPeak,
         isPeak: isPeak,
-        base_price: Number(row.base_price),
+        base_price: basePrice,
+        price: basePrice,
+        current_price: currentPrice,
+        currentPrice: currentPrice,
+        passenger_ids: passengerIds,
+        passengerIds: passengerIds,
         total_seats: row.total_seats,
         available_seats: row.available_seats,
         status: row.status,
@@ -387,12 +414,16 @@ async function createRide(req, res) {
             driver_first_name: driverInfo.first_name,
             driver_last_name: driverInfo.last_name,
             driver_phone: driverInfo.phone,
-            driver_rating: driverInfo.rating
+            driver_rating: driverInfo.rating,
+            passenger_ids: []
         };
+
+        const mappedRide = mapRideRow(combinedRow);
 
         return res.status(201).json({
             message: 'Поездка успешно создана',
-            ride: mapRideRow(combinedRow)
+            ride: mappedRide,
+            current_price: mappedRide.current_price
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -481,7 +512,15 @@ async function getRides(req, res) {
             r.total_seats,
             r.available_seats,
             r.status,
-            r.created_at
+            r.created_at,
+            COALESCE(
+                (
+                    SELECT array_agg(m.passenger_id::text)
+                    FROM matches m
+                    WHERE m.ride_id = r.id AND m.status = 'accepted'
+                ),
+                ARRAY[]::text[]
+            ) AS passenger_ids
         FROM rides r
         LEFT JOIN users u ON r.driver_id = u.id
         WHERE ${whereClause}
@@ -499,6 +538,9 @@ async function getRides(req, res) {
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка поездок' });
     }
 }
+
+/** Алиас для соответствия спецификации */
+const getAllRides = getRides;
 
 /**
  * Присоединение пассажира к поездке
@@ -573,12 +615,23 @@ async function joinRide(req, res) {
         `;
         const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price]);
 
+        // Получение актуального списка пассажиров для расчета Split Fare
+        const passengersRes = await client.query(
+            "SELECT passenger_id FROM matches WHERE ride_id = $1 AND status = 'accepted'",
+            [rideId]
+        );
+        const passenger_ids = passengersRes.rows.map((r) => String(r.passenger_id));
+        const price = Number(ride.base_price);
+        const current_price = calculateCurrentPrice(price, passenger_ids);
+
         await client.query('COMMIT');
 
         return res.status(201).json({
             message: 'Вы успешно присоединились к поездке',
             match: matchRes.rows[0],
-            available_seats: updateRideRes.rows[0].available_seats
+            available_seats: updateRideRes.rows[0].available_seats,
+            current_price,
+            passenger_ids
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -610,7 +663,7 @@ async function leaveRide(req, res) {
 
         // Проверка существования поездки
         const rideCheck = await client.query(
-            'SELECT id, driver_id, status, available_seats, total_seats FROM rides WHERE id = $1 FOR UPDATE',
+            'SELECT id, driver_id, status, available_seats, total_seats, base_price FROM rides WHERE id = $1 FOR UPDATE',
             [rideId]
         );
         if (rideCheck.rows.length === 0) {
@@ -643,11 +696,22 @@ async function leaveRide(req, res) {
             [rideId]
         );
 
+        // Получение актуального списка пассажиров после отмены участия для пересчета Split Fare
+        const passengersRes = await client.query(
+            "SELECT passenger_id FROM matches WHERE ride_id = $1 AND status = 'accepted'",
+            [rideId]
+        );
+        const passenger_ids = passengersRes.rows.map((r) => String(r.passenger_id));
+        const price = Number(ride.base_price);
+        const current_price = calculateCurrentPrice(price, passenger_ids);
+
         await client.query('COMMIT');
 
         return res.json({
             message: 'Вы успешно отменили участие в поездке',
-            available_seats: updateRideRes.rows[0]?.available_seats
+            available_seats: updateRideRes.rows[0]?.available_seats,
+            current_price,
+            passenger_ids
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -661,8 +725,10 @@ async function leaveRide(req, res) {
 module.exports = {
     createRide,
     getRides,
+    getAllRides,
     joinRide,
     leaveRide,
+    calculateCurrentPrice,
     isPeakHour,
     calculateDistanceKm,
     calculateBasePrice

@@ -25,7 +25,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
 import type { Ride } from '../types';
-import { formatDays, formatPrice } from '../utils';
+import { formatDays } from '../utils';
 import { api } from '../api';
 
 interface RideCardProps {
@@ -77,6 +77,13 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     .toUpperCase()
     .slice(0, 2);
 
+  const passengerCount = (Array.isArray(ride.passengerIds) && ride.passengerIds.length > 0)
+    ? ride.passengerIds.length
+    : (ride.totalSeats !== undefined && ride.availableSeats !== undefined
+        ? Math.max(0, ride.totalSeats - ride.availableSeats)
+        : (isPassenger ? 1 : 0));
+  const hasMultiplePassengers = passengerCount > 1 || ride.currentPrice < ride.price;
+
   return (
     <Card
       variant="outlined"
@@ -99,16 +106,16 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             <Stack direction="row" spacing={0.5} alignItems="center">
               <AccessTimeIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
               <Typography variant="caption" color="text.secondary">
-                {ride.time}
+                {ride.time} • {ride.distanceKm} км
               </Typography>
             </Stack>
           </Box>
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="h6" color="primary.main" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {formatPrice(ride.price)}
+              {ride.currentPrice} ₽{hasMultiplePassengers ? ' с человека' : ''}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {ride.distanceKm} км
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.72rem', lineHeight: 1.2, mt: 0.3 }}>
+              Общая сумма: {ride.price} ₽. Раздели цену с попутчиками!
             </Typography>
           </Box>
           <IconButton

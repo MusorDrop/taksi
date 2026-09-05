@@ -41,6 +41,8 @@ export interface Ride {
   time: string;
   telegram: string;
   price: number;
+  currentPrice: number;
+  passengerIds?: string[];
   distanceKm: number;
   isPeak: boolean;
   createdAt: number;
@@ -100,6 +102,8 @@ export interface BackendRide {
   is_peak?: boolean;
   isPeak?: boolean;
   base_price: number;
+  current_price?: number;
+  passenger_ids?: string[];
   total_seats?: number;
   available_seats?: number;
   status?: string;

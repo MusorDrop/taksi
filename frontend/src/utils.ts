@@ -119,6 +119,12 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
   const dayKeys: import('./types').DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const day = dayKeys[dayIndex] || 'Mon';
 
+  const price = Number(backendRide.base_price || 0);
+  const passengerIds = Array.isArray(backendRide.passenger_ids) ? backendRide.passenger_ids : [];
+  const currentPrice = backendRide.current_price !== undefined && backendRide.current_price !== null
+    ? Number(backendRide.current_price)
+    : Math.ceil(price / Math.max(passengerIds.length, 1));
+
   return {
     id: backendRide.id,
     driverId: backendRide.driver_id,
@@ -130,7 +136,9 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     telegram: backendRide.driver_phone
       ? backendRide.driver_phone.replace('+', '')
       : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'),
-    price: Number(backendRide.base_price || 0),
+    price,
+    currentPrice,
+    passengerIds,
     distanceKm: Number(backendRide.distance_km ?? backendRide.distanceKm ?? 5.0),
     isPeak: Boolean(backendRide.is_peak ?? backendRide.isPeak),
     createdAt: backendRide.created_at ? new Date(backendRide.created_at).getTime() : Date.now(),

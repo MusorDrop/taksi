@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
 import type { Ride, User, BackendRide, BackendUser, RidesResponse } from './types';
-import { MOCK_RIDES, MOCK_USER } from './mockData';
 import { api, getAuthToken, setAuthToken, removeAuthToken } from './api';
 import { mapBackendRideToRide } from './utils';
 
@@ -14,7 +13,7 @@ export interface AppContextValue {
   isRidesLoading: boolean;
   ridesError: string | null;
   fetchRides: (signal?: AbortSignal) => Promise<void>;
-  addRide: (ride: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName'>) => Promise<void> | void;
+  addRide: (ride: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName' | 'currentPrice'>) => Promise<void> | void;
   passengerRideIds: string[];
   joinRide: (rideId: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
@@ -25,10 +24,10 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
-  const [rides, setRides] = useState<Ride[]>(MOCK_RIDES);
+  const [rides, setRides] = useState<Ride[]>([]);
   const [isRidesLoading, setIsRidesLoading] = useState<boolean>(false);
   const [ridesError, setRidesError] = useState<string | null>(null);
-  const [passengerRideIds, setPassengerRideIds] = useState<string[]>(['r3', 'r7']);
+  const [passengerRideIds, setPassengerRideIds] = useState<string[]>([]);
 
   // Проверка существующего токена при инициализации приложения
   useEffect(() => {
@@ -96,7 +95,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback((name: string): void => {
-    setUser({ ...MOCK_USER, name: name || MOCK_USER.name });
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setUser({
+      id: `u_${Date.now()}`,
+      name: trimmed,
+      telegram: trimmed.toLowerCase().replace(/\s+/g, ''),
+    });
   }, []);
 
   const logout = useCallback((): void => {
@@ -110,9 +115,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRidesError(null);
     try {
       const response = await api.get<RidesResponse>('/api/rides', { signal });
-      if (response?.rides && response.rides.length > 0) {
+      if (response && Array.isArray(response.rides)) {
         const mapped = response.rides.map(mapBackendRideToRide);
         setRides(mapped);
+      } else {
+        setRides([]);
       }
     } catch (err: unknown) {
       if (signal?.aborted) {
@@ -120,6 +127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const message = err instanceof Error ? err.message : 'Не удалось загрузить поездки';
       setRidesError(message);
+      setRides([]);
     } finally {
       setIsRidesLoading(false);
     }
@@ -136,7 +144,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [fetchRides]);
 
   const addRide = useCallback(
-    async (rideData: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName'>): Promise<void> => {
+    async (rideData: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName' | 'currentPrice'>): Promise<void> => {
       if (!user) {
         throw new Error('Для публикации поездки необходимо авторизоваться');
       }
@@ -155,36 +163,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         payload.vehicle_id = rideData.vehicleId;
       }
 
-      try {
-        const response = await api.post<{ message: string; ride: BackendRide }>('/api/rides', payload);
-        if (response?.ride) {
-          const newRide = mapBackendRideToRide(response.ride);
-          setRides((prev) => [newRide, ...prev]);
-          return;
-        }
-      } catch (err: unknown) {
-        // Локальное добавление поездки при сетевой ошибке для сохранения непрерывности UX
-        const fallbackRide: Ride = {
-          ...rideData,
-          id: `r_${Date.now()}`,
-          createdAt: Date.now(),
-          driverId: user.id,
-          driverName: user.name,
-          status: 'scheduled',
-        };
-        setRides((prev) => [fallbackRide, ...prev]);
-        throw err;
+      const response = await api.post<{ message: string; ride: BackendRide }>('/api/rides', payload);
+      if (response?.ride) {
+        const newRide = mapBackendRideToRide(response.ride);
+        setRides((prev) => [newRide, ...prev]);
       }
-
-      const fallbackRide: Ride = {
-        ...rideData,
-        id: `r_${Date.now()}`,
-        createdAt: Date.now(),
-        driverId: user.id,
-        driverName: user.name,
-        status: 'scheduled',
-      };
-      setRides((prev) => [fallbackRide, ...prev]);
     },
     [user],
   );
@@ -192,7 +175,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const joinRide = useCallback(async (rideId: string): Promise<void> => {
     setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
     try {
-      await api.post(`/api/rides/${rideId}/join`);
+      const response = await api.post<{
+        message: string;
+        available_seats?: number;
+        current_price?: number;
+        passenger_ids?: string[];
+      }>(`/api/rides/${rideId}/join`);
+
+      if (response) {
+        setRides((prev) =>
+          prev.map((r) => {
+            if (r.id !== rideId) return r;
+            const updatedSeats = response.available_seats !== undefined
+              ? response.available_seats
+              : Math.max(0, (r.availableSeats ?? 1) - 1);
+            const updatedPrice = response.current_price !== undefined
+              ? response.current_price
+              : r.currentPrice;
+            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
+            return {
+              ...r,
+              availableSeats: updatedSeats,
+              currentPrice: updatedPrice,
+              passengerIds: updatedPassengerIds,
+            };
+          }),
+        );
+      }
     } catch {
       // Локальное сохранение состояния
     }
@@ -201,7 +210,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const leaveRide = useCallback(async (rideId: string): Promise<void> => {
     setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
     try {
-      await api.post(`/api/rides/${rideId}/leave`);
+      const response = await api.post<{
+        message: string;
+        available_seats?: number;
+        current_price?: number;
+        passenger_ids?: string[];
+      }>(`/api/rides/${rideId}/leave`);
+
+      if (response) {
+        setRides((prev) =>
+          prev.map((r) => {
+            if (r.id !== rideId) return r;
+            const updatedSeats = response.available_seats !== undefined
+              ? response.available_seats
+              : (r.availableSeats ?? 0) + 1;
+            const updatedPrice = response.current_price !== undefined
+              ? response.current_price
+              : r.currentPrice;
+            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
+            return {
+              ...r,
+              availableSeats: updatedSeats,
+              currentPrice: updatedPrice,
+              passengerIds: updatedPassengerIds,
+            };
+          }),
+        );
+      }
     } catch {
       // Локальное сохранение состояния
     }
