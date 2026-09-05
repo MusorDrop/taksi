@@ -19,6 +19,7 @@ import AddIcon from '@mui/icons-material/Add';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
+import { getRideDayKey } from '../utils';
 
 interface FindRidesScreenProps {
   onNavigateToOffer?: () => void;
@@ -55,7 +56,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
     let result = rides;
 
     if (filterDay) {
-      result = result.filter((r) => r.days.includes(filterDay));
+      result = result.filter((r) => getRideDayKey(r) === filterDay);
     }
 
     if (filterDest.trim()) {

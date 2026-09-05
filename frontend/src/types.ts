@@ -39,7 +39,10 @@ export interface Ride {
   driverName: string;
   from: string;
   to: string;
-  days: DayKey[];
+  dateFormatted: string;
+  dateString?: string;
+  departure_time?: string;
+  departureTime?: string;
   time: string;
   telegram: string;
   price: number;
