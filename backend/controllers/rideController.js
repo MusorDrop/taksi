@@ -267,8 +267,8 @@ async function createRide(req, res) {
     );
 
     const departureTime = parseDepartureTime(req.body.departure_time || req.body.time);
-    const totalSeats = Math.max(1, parseInt(req.body.total_seats || 4, 10));
-    const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats || totalSeats, 10)));
+    const totalSeats = Math.min(8, Math.max(1, parseInt(req.body.total_seats || 4, 10)));
+    const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats !== undefined ? req.body.available_seats : totalSeats, 10)));
 
     const client = await pool.connect();
     try {
@@ -491,7 +491,10 @@ async function joinRide(req, res) {
         await client.query('BEGIN');
 
         // Проверка существования поездки
-        const rideCheck = await client.query('SELECT * FROM rides WHERE id = $1 FOR UPDATE', [rideId]);
+        const rideCheck = await client.query(
+            'SELECT id, driver_id, status, available_seats, total_seats, base_price FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
         if (rideCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });
@@ -577,7 +580,10 @@ async function leaveRide(req, res) {
         await client.query('BEGIN');
 
         // Проверка существования поездки
-        const rideCheck = await client.query('SELECT * FROM rides WHERE id = $1 FOR UPDATE', [rideId]);
+        const rideCheck = await client.query(
+            'SELECT id, driver_id, status, available_seats, total_seats FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
         if (rideCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });
