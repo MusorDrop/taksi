@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -10,6 +10,9 @@ import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -18,12 +21,14 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { useApp } from '../AppContext';
+import { useThemeMode } from '../ThemeModeContext';
 import { api } from '../api';
 import { formatAvatarUrl } from '../utils';
 import type { Vehicle, VehiclesResponse, BackendUser } from '../types';
 
 export default function ProfileScreen() {
   const { user, logout, rides, passengerRideIds, updateUser } = useApp();
+  const { mode, toggleTheme } = useThemeMode();
 
   // Состояния для загрузки аватарки
   const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
@@ -41,31 +46,49 @@ export default function ProfileScreen() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
+  const saveSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const avatarSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
+      if (avatarSuccessTimerRef.current) clearTimeout(avatarSuccessTimerRef.current);
+    };
+  }, []);
+
   // Загрузка списка автомобилей текущего пользователя через API
   useEffect(() => {
+    const controller = new AbortController();
     let isMounted = true;
+
     async function loadVehicles(): Promise<void> {
       setIsLoadingVehicles(true);
       setVehicleError(null);
       try {
-        const res = await api.get<VehiclesResponse>('/api/vehicles');
+        const res = await api.get<VehiclesResponse>('/api/vehicles', {
+          signal: controller.signal,
+        });
         if (isMounted && res?.vehicles) {
           setVehicles(res.vehicles);
         }
       } catch (err: unknown) {
+        if (controller.signal.aborted) return;
         if (isMounted) {
           const message = err instanceof Error ? err.message : 'Не удалось загрузить список автомобилей';
           setVehicleError(message);
         }
       } finally {
-        if (isMounted) {
+        if (isMounted && !controller.signal.aborted) {
           setIsLoadingVehicles(false);
         }
       }
     }
+
     loadVehicles();
+
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, []);
 
@@ -91,8 +114,12 @@ export default function ProfileScreen() {
         setLicensePlate('');
         setColor('');
         setShowAddForm(false);
+        if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
         setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        saveSuccessTimerRef.current = setTimeout(() => {
+          setSaveSuccess(false);
+          saveSuccessTimerRef.current = null;
+        }, 3000);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось сохранить автомобиль';
@@ -132,8 +159,12 @@ export default function ProfileScreen() {
 
       if (res?.avatar_url) {
         updateUser({ avatar_url: res.avatar_url });
+        if (avatarSuccessTimerRef.current) clearTimeout(avatarSuccessTimerRef.current);
         setAvatarSuccess(true);
-        setTimeout(() => setAvatarSuccess(false), 3000);
+        avatarSuccessTimerRef.current = setTimeout(() => {
+          setAvatarSuccess(false);
+          avatarSuccessTimerRef.current = null;
+        }, 3000);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось загрузить аватар';
@@ -259,6 +290,19 @@ export default function ProfileScreen() {
       </Stack>
 
       <Divider sx={{ my: 3 }} />
+
+      {/* Секция: Переключение темы */}
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 3 }}>
+        <FormControlLabel
+          control={<Switch checked={mode === 'dark'} onChange={toggleTheme} />}
+          label={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <DarkModeIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+              <span>Тёмная тема</span>
+            </Stack>
+          }
+        />
+      </Paper>
 
       {/* Секция: Гараж автомобилей */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>

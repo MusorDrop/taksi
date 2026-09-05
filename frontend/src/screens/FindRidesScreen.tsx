@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { filterRidesByNlpQuery } from '../utils/nlpParser';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -19,6 +19,7 @@ import AddIcon from '@mui/icons-material/Add';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
+import { getRideDayKey } from '../utils';
 
 interface FindRidesScreenProps {
   onNavigateToOffer?: () => void;
@@ -32,12 +33,22 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
   const [filterDest, setFilterDest] = useState<string>('');
 
+  const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
+    };
+  }, []);
+
   const handleAiSearch = (): void => {
     if (!aiQuery.trim()) return;
     setAiLoading(true);
-    setTimeout(() => {
+    if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
+    aiSearchTimerRef.current = setTimeout(() => {
       setQuery(aiQuery);
       setAiLoading(false);
+      aiSearchTimerRef.current = null;
     }, 1500);
   };
 
@@ -45,7 +56,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
     let result = rides;
 
     if (filterDay) {
-      result = result.filter((r) => r.days.includes(filterDay));
+      result = result.filter((r) => getRideDayKey(r) === filterDay);
     }
 
     if (filterDest.trim()) {
@@ -116,6 +127,10 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               '& .MuiOutlinedInput-root': {
                 bgcolor: 'white',
                 borderRadius: 2,
+              },
+              '& .MuiOutlinedInput-input::placeholder': {
+                color: '#757575',
+                opacity: 1,
               },
             }}
           />

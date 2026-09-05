@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -72,22 +72,40 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
   const [rides, setRides] = useState<AdminRide[]>([]);
   const [vehicles, setVehicles] = useState<AdminVehicle[]>([]);
 
-  const showNotification = (msg: string, isError = false) => {
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
+  const showNotification = useCallback((msg: string, isError = false) => {
     if (isError) {
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       setErrorMessage(msg);
-      setTimeout(() => setErrorMessage(null), 5000);
+      errorTimeoutRef.current = setTimeout(() => {
+        setErrorMessage(null);
+        errorTimeoutRef.current = null;
+      }, 5000);
     } else {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
       setSuccessMessage(msg);
-      setTimeout(() => setSuccessMessage(null), 3000);
+      successTimeoutRef.current = setTimeout(() => {
+        setSuccessMessage(null);
+        successTimeoutRef.current = null;
+      }, 3000);
     }
-  };
+  }, []);
 
   const getAdminHeaders = useCallback(() => {
     return { 'X-Admin-Key': adminKey };
   }, [adminKey]);
 
   // Загрузка данных активной вкладки
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (signal?: AbortSignal) => {
     if (!adminKey) return;
     setIsLoading(true);
     setErrorMessage(null);
@@ -96,20 +114,24 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
       if (activeTab === 'users') {
         const res = await api.get<{ count: number; users: BackendUser[] }>('/api/admin/users', {
           headers: getAdminHeaders(),
+          signal,
         });
         setUsers(res.users || []);
       } else if (activeTab === 'rides') {
         const res = await api.get<{ count: number; rides: AdminRide[] }>('/api/admin/rides', {
           headers: getAdminHeaders(),
+          signal,
         });
         setRides(res.rides || []);
       } else if (activeTab === 'vehicles') {
         const res = await api.get<{ count: number; vehicles: AdminVehicle[] }>('/api/admin/vehicles', {
           headers: getAdminHeaders(),
+          signal,
         });
         setVehicles(res.vehicles || []);
       }
     } catch (err: unknown) {
+      if (signal?.aborted) return;
       const msg = err instanceof Error ? err.message : 'Ошибка загрузки данных';
       if (msg.includes('ключ') || msg.includes('401') || msg.includes('403')) {
         setAuthError('Недействительный ключ администратора. Пожалуйста, введите ключ повторно.');
@@ -119,14 +141,20 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
         showNotification(msg, true);
       }
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
-  }, [adminKey, activeTab, getAdminHeaders]);
+  }, [adminKey, activeTab, getAdminHeaders, showNotification]);
 
   useEffect(() => {
-    if (adminKey) {
-      loadData();
-    }
+    if (!adminKey) return;
+    const controller = new AbortController();
+    loadData(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
   }, [adminKey, activeTab, loadData]);
 
   // Обработка входа по ключу
@@ -388,7 +416,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
 
         <Stack direction="row" spacing={1}>
           <Tooltip title="Обновить данные">
-            <IconButton onClick={loadData} disabled={isLoading} size="small">
+            <IconButton onClick={() => loadData()} disabled={isLoading} size="small">
               <RefreshIcon />
             </IconButton>
           </Tooltip>

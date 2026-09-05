@@ -1,10 +1,18 @@
 node_modules/
 .bolt/
 dist/
+dist-ssr/
+
+# Environment files
 .env
+.env.*
 *.env
+*.env.*
 
-
+# Uploads directory
+uploads/
+**/uploads/*
+!**/uploads/.gitkeep
 
 # Antigravity Agent Scratch & Cache
 scratch/
