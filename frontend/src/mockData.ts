@@ -1,4 +1,5 @@
 import type { Ride, User } from './types';
+import { getAiRecommendedPrice, isPeakTime } from './utils';
 
 export const MOCK_USER: User = {
   id: 'u0',
@@ -6,7 +7,11 @@ export const MOCK_USER: User = {
   telegram: 'alexmorozov',
 };
 
-export const MOCK_RIDES: Ride[] = [
+// Prices below are driver-set, but seeded from the same AI recommendation
+// model used in "Создать поездку" (see getAiRecommendedPrice in utils.ts) —
+// so the demo data lines up with what a real driver would actually see and
+// apply, instead of arbitrary fixed dummy numbers.
+const RAW_RIDES: Array<Omit<Ride, 'price' | 'isPeak'>> = [
   {
     id: 'r1',
     driverId: 'u1',
@@ -16,9 +21,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     time: '08:15',
     telegram: 'sophiechen',
-    price: 3.5,
     distanceKm: 6.2,
-    isPeak: true,
     createdAt: Date.now() - 100000,
   },
   {
@@ -30,9 +33,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Mon', 'Wed', 'Fri'],
     time: '09:00',
     telegram: 'dmitrypark',
-    price: 2.8,
     distanceKm: 4.5,
-    isPeak: true,
     createdAt: Date.now() - 90000,
   },
   {
@@ -44,9 +45,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Tue', 'Thu'],
     time: '10:30',
     telegram: 'mariagarcia',
-    price: 2.0,
     distanceKm: 3.1,
-    isPeak: false,
     createdAt: Date.now() - 80000,
   },
   {
@@ -58,9 +57,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     time: '07:45',
     telegram: 'davidkim',
-    price: 4.2,
     distanceKm: 7.8,
-    isPeak: true,
     createdAt: Date.now() - 70000,
   },
   {
@@ -72,9 +69,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Wed', 'Fri'],
     time: '14:00',
     telegram: 'emmawilson',
-    price: 1.5,
     distanceKm: 2.0,
-    isPeak: false,
     createdAt: Date.now() - 60000,
   },
   {
@@ -86,9 +81,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Sat'],
     time: '11:00',
     telegram: 'liamjohnson',
-    price: 2.5,
     distanceKm: 3.8,
-    isPeak: false,
     createdAt: Date.now() - 50000,
   },
   {
@@ -100,9 +93,7 @@ export const MOCK_RIDES: Ride[] = [
     days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     time: '08:30',
     telegram: 'oliviabrown',
-    price: 3.0,
     distanceKm: 5.5,
-    isPeak: true,
     createdAt: Date.now() - 40000,
   },
   {
@@ -112,11 +103,15 @@ export const MOCK_RIDES: Ride[] = [
     from: 'Спортивный комплекс',
     to: 'Главная площадь',
     days: ['Tue', 'Thu', 'Sat'],
-    time: '16:30',
+    time: '18:00',
     telegram: 'noahdavis',
-    price: 2.2,
     distanceKm: 3.4,
-    isPeak: false,
     createdAt: Date.now() - 30000,
   },
 ];
+
+export const MOCK_RIDES: Ride[] = RAW_RIDES.map((ride) => ({
+  ...ride,
+  price: getAiRecommendedPrice(ride.distanceKm, ride.time),
+  isPeak: isPeakTime(ride.time),
+}));
