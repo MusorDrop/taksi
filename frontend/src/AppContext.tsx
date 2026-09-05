@@ -8,6 +8,7 @@ export interface AppContextValue {
   isAuthLoading: boolean;
   login: (name: string) => void;
   loginWithData: (token: string, backendUser: BackendUser) => void;
+  updateUser: (fields: Partial<User>) => void;
   logout: () => void;
   rides: Ride[];
   isRidesLoading: boolean;
@@ -52,6 +53,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             telegram: response.user.username,
             phone: response.user.phone ?? undefined,
             role: response.user.role,
+            avatar_url: response.user.avatar_url,
+            is_blocked: response.user.is_blocked,
           });
         }
       } catch {
@@ -91,7 +94,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       telegram: backendUser.username,
       phone: backendUser.phone ?? undefined,
       role: backendUser.role,
+      avatar_url: backendUser.avatar_url,
+      is_blocked: backendUser.is_blocked,
     });
+  }, []);
+
+  const updateUser = useCallback((fields: Partial<User>): void => {
+    setUser((prev) => (prev ? { ...prev, ...fields } : null));
   }, []);
 
   const login = useCallback((name: string): void => {
@@ -248,6 +257,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isAuthLoading,
       login,
       loginWithData,
+      updateUser,
       logout,
       rides,
       isRidesLoading,
@@ -263,6 +273,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isAuthLoading,
       login,
       loginWithData,
+      updateUser,
       logout,
       rides,
       isRidesLoading,

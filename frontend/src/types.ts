@@ -29,6 +29,8 @@ export interface User {
   phone?: string;
   role?: string;
   averageRating?: number | null;
+  avatar_url?: string | null;
+  is_blocked?: boolean;
 }
 
 export interface Ride {
@@ -68,6 +70,9 @@ export interface BackendUser {
   rating?: number | null;
   average_rating?: number | string | null;
   is_verified?: boolean;
+  avatar_url?: string | null;
+  is_blocked?: boolean;
+  created_at?: string;
 }
 
 /**

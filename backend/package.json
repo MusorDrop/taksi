@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "migrate": "node db/migrate.js",
     "test": "cross-env NODE_ENV=test node smoke-test.js",
     "test:smoke": "cross-env NODE_ENV=test node smoke-test.js"
   },
@@ -28,6 +29,7 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
