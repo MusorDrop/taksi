@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type FormEvent } from 'react';
+import { useMemo, useState, useEffect, useRef, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -53,23 +53,38 @@ export default function OfferRideScreen() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   // Загрузка доступных автомобилей пользователя для привязки к поездке
   useEffect(() => {
+    const controller = new AbortController();
     let isMounted = true;
+
     async function loadVehicles(): Promise<void> {
       try {
-        const res = await api.get<VehiclesResponse>('/api/vehicles');
+        const res = await api.get<VehiclesResponse>('/api/vehicles', {
+          signal: controller.signal,
+        });
         if (isMounted && res?.vehicles && res.vehicles.length > 0) {
           setVehicles(res.vehicles);
           setSelectedVehicleId(res.vehicles[0].id);
         }
       } catch {
-        // При недоступности бэкенда форма работает без выбора автомобиля
+        // При недоступности бэкенда или отмене запроса форма работает без выбора автомобиля
       }
     }
+
     loadVehicles();
+
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, []);
 
@@ -121,12 +136,16 @@ export default function OfferRideScreen() {
         isPeak: peak,
         vehicleId: selectedVehicleId || undefined,
       });
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
       setSuccess(true);
       setFrom('');
       setTo('');
       setTime('08:00');
       setPrice('');
-      setTimeout(() => setSuccess(false), 3000);
+      successTimerRef.current = setTimeout(() => {
+        setSuccess(false);
+        successTimerRef.current = null;
+      }, 3000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось опубликовать поездку на сервере';
       setSubmitError(message);

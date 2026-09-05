@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { filterRidesByNlpQuery } from '../utils/nlpParser';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -32,12 +32,22 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
   const [filterDest, setFilterDest] = useState<string>('');
 
+  const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
+    };
+  }, []);
+
   const handleAiSearch = (): void => {
     if (!aiQuery.trim()) return;
     setAiLoading(true);
-    setTimeout(() => {
+    if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
+    aiSearchTimerRef.current = setTimeout(() => {
       setQuery(aiQuery);
       setAiLoading(false);
+      aiSearchTimerRef.current = null;
     }, 1500);
   };
 

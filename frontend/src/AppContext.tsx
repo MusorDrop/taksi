@@ -188,7 +188,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter((r) => r.passengerIds && r.passengerIds.includes(user.id))
       .map((r) => r.id);
     if (userJoinedRideIds.length > 0) {
-      setPassengerRideIds((prev) => Array.from(new Set([...prev, ...userJoinedRideIds])));
+      setPassengerRideIds((prev) => {
+        const next = Array.from(new Set([...prev, ...userJoinedRideIds]));
+        if (next.length === prev.length && next.every((id, i) => id === prev[i])) {
+          return prev;
+        }
+        return next;
+      });
     }
   }, [rides, user]);
 
@@ -245,8 +251,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-    } catch (err) {
-      console.error('Ошибка присоединения к поездке:', err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Ошибка присоединения к поездке';
+      setRidesError(message);
       fetchRides();
     }
   }, [user, fetchRides]);
@@ -303,8 +310,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-    } catch (err) {
-      console.error('Ошибка отмены участия в поездке:', err);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Ошибка отмены участия в поездке';
+      setRidesError(message);
       fetchRides();
     }
   }, [user, fetchRides]);
