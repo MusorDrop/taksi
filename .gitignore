@@ -9,6 +9,8 @@ GEMINI.md
 repomix.config.json
 .repomixignore
 
+
+
 # IDE / Editor
 .vscode/
 .idea/
