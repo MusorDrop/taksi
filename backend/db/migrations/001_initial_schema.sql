@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(20),
     role user_role NOT NULL DEFAULT 'both',
     rating NUMERIC(3, 2) DEFAULT NULL CHECK (rating >= 1.0 AND rating <= 5.0),
+    avatar_url TEXT,
+    is_blocked BOOLEAN DEFAULT false,
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     emergency_contact VARCHAR(255),
     preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -48,6 +50,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     brand VARCHAR(150) NOT NULL,
     color VARCHAR(50),
     license_plate VARCHAR(20) NOT NULL,
+    seats INTEGER NOT NULL DEFAULT 4,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -64,6 +67,8 @@ CREATE TABLE IF NOT EXISTS rides (
     available_seats INTEGER NOT NULL DEFAULT 4,
     status ride_status NOT NULL DEFAULT 'scheduled',
     base_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    ride_type VARCHAR(20) DEFAULT 'one_off',
+    regular_days VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats)
 );
@@ -77,6 +82,7 @@ CREATE TABLE IF NOT EXISTS matches (
     dropoff_point GEOMETRY(Point, 4326),
     agreed_price NUMERIC(10, 2) NOT NULL,
     status match_status NOT NULL DEFAULT 'accepted',
+    selected_day VARCHAR(20),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id)
 );
@@ -92,7 +98,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Индексы для ускорения поиска и гео-запросов
+-- Базовые индексы для ускорения поиска и гео-запросов
 CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
 CREATE INDEX IF NOT EXISTS idx_rides_departure_time ON rides(departure_time);
 CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
@@ -102,6 +108,22 @@ CREATE INDEX IF NOT EXISTS idx_rides_end_point ON rides USING GIST (end_point);
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id ON matches(ride_id);
 CREATE INDEX IF NOT EXISTS idx_matches_passenger_id ON matches(passenger_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_ride_id ON reviews(ride_id);
+
+-- Индексы производительности (из бывшей миграции 003)
+-- 1. Индекс на колонку is_blocked для быстрого поиска и проверки блокировки пользователей
+CREATE INDEX IF NOT EXISTS idx_users_is_blocked ON users(is_blocked);
+
+-- 2. Составной индекс для оптимизации агрегации пассажиров в rideController (array_agg в getRides, joinRide, leaveRide)
+CREATE INDEX IF NOT EXISTS idx_matches_ride_id_status ON matches(ride_id, status);
+
+-- 3. Составной индекс для быстрого поиска поездок по статусу и времени отправления с поддержкой сортировки
+CREATE INDEX IF NOT EXISTS idx_rides_status_departure_time ON rides(status, departure_time);
+
+-- 4. Индексы на внешние ключи (Foreign Keys) для предотвращения Seq Scan и ускорения JOIN / каскадных операций
+CREATE INDEX IF NOT EXISTS idx_vehicles_driver_id ON vehicles(driver_id);
+CREATE INDEX IF NOT EXISTS idx_rides_vehicle_id ON rides(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_reviewee_id ON reviews(reviewee_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id ON reviews(reviewer_id);
 
 -- Обеспечение наличия ограничений для ранее созданных таблиц (идемпотентный ALTER)
 DO $$ BEGIN
@@ -119,6 +141,7 @@ END $$;
 DO $$ BEGIN
     ALTER TABLE matches ADD CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id);
 EXCEPTION
-    WHEN duplicate_object THEN null;
+    WHEN duplicate_object OR duplicate_table THEN null;
 END $$;
+
 
