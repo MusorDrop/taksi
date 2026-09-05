@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import { filterRidesByNlpQuery } from '../utils/nlpParser';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -24,35 +25,6 @@ export default function FindRidesScreen() {
   const [aiQuery, setAiQuery] = useState<string>('');
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
   const [filterDest, setFilterDest] = useState<string>('');
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  // Запрос списка поездок с сервера с отменой через AbortController
-  useEffect(() => {
-    const controller = new AbortController();
-    let isMounted = true;
-
-    async function loadRidesData(): Promise<void> {
-      setFetchError(null);
-      try {
-        await fetchRides(controller.signal);
-      } catch (err: unknown) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        const message = err instanceof Error ? err.message : 'Ошибка при загрузке поездок';
-        if (isMounted) {
-          setFetchError(message);
-        }
-      }
-    }
-
-    loadRidesData();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, [fetchRides]);
 
   const handleAiSearch = (): void => {
     if (!aiQuery.trim()) return;
@@ -78,59 +50,7 @@ export default function FindRidesScreen() {
     }
 
     if (query.trim()) {
-      const q = query.toLowerCase();
-      const words = q.split(/\s+/).filter(Boolean);
-
-      const dayMap: Record<string, DayKey> = {
-        понедельник: 'Mon', пн: 'Mon',
-        вторник: 'Tue', вт: 'Tue',
-        среда: 'Wed', среду: 'Wed', ср: 'Wed',
-        четверг: 'Thu', чт: 'Thu',
-        пятница: 'Fri', пт: 'Fri',
-        суббота: 'Sat', сб: 'Sat',
-        воскресенье: 'Sun', вс: 'Sun',
-        wednesday: 'Wed', wed: 'Wed',
-        monday: 'Mon', tuesday: 'Tue',
-        thursday: 'Thu', friday: 'Fri',
-        saturday: 'Sat', sunday: 'Sun',
-      };
-
-      let dayFilter: DayKey | null = null;
-      let timeFilter: string | null = null;
-
-      for (const word of words) {
-        const lower = word.toLowerCase();
-        if (dayMap[lower]) dayFilter = dayMap[lower];
-        const timeMatch = word.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)?$/i);
-        if (timeMatch) {
-          let h = parseInt(timeMatch[1]);
-          const m = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
-          const ampm = timeMatch[3]?.toLowerCase();
-          if (ampm === 'pm' && h < 12) h += 12;
-          if (ampm === 'am' && h === 12) h = 0;
-          timeFilter = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        }
-      }
-
-      result = result.filter((r) => {
-        let score = 0;
-        for (const word of words) {
-          if (r.from.toLowerCase().includes(word)) score++;
-          if (r.to.toLowerCase().includes(word)) score++;
-          if (r.driverName.toLowerCase().includes(word)) score++;
-        }
-        if (dayFilter && r.days.includes(dayFilter)) score += 2;
-        if (timeFilter && r.time === timeFilter) score += 2;
-
-        const hasTextMatch = words.some(
-          (w) =>
-            r.from.toLowerCase().includes(w) ||
-            r.to.toLowerCase().includes(w) ||
-            r.driverName.toLowerCase().includes(w),
-        );
-
-        return score > 0 || hasTextMatch || (!dayFilter && !timeFilter && words.length === 0);
-      });
+      result = filterRidesByNlpQuery(result, query);
     }
 
     return result;
@@ -152,9 +72,9 @@ export default function FindRidesScreen() {
         </Button>
       </Stack>
 
-      {(ridesError || fetchError) && (
+      {ridesError && (
         <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-          {ridesError || fetchError}
+          {ridesError}
         </Alert>
       )}
 

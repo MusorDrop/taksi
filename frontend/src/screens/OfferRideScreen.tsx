@@ -239,7 +239,7 @@ export default function OfferRideScreen() {
               {peak && (
                 <Chip
                   icon={<BoltIcon sx={{ fontSize: 14 }} />}
-                  label="Пиковый спрос +35%"
+                  label="Пиковый спрос +30%"
                   size="small"
                   color="warning"
                   sx={{ fontWeight: 600, ml: 'auto' }}
