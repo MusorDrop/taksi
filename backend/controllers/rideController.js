@@ -64,12 +64,14 @@ function resolvePointCoordinates(input, fallback) {
  * @returns {Date} Корректный объект даты
  */
 function parseDepartureTime(timeInput) {
+    const fallback = new Date(Date.now() + 60 * 60 * 1000);
     if (!timeInput) {
-        return new Date(Date.now() + 60 * 60 * 1000);
+        return fallback;
     }
 
     if (typeof timeInput === 'string' && /^\d{1,2}:\d{2}$/.test(timeInput.trim())) {
         const [hours, minutes] = timeInput.trim().split(':').map(Number);
+        if (hours > 23 || minutes > 59) return fallback;
         const target = new Date();
         target.setHours(hours, minutes, 0, 0);
         if (target.getTime() < Date.now()) {
@@ -80,7 +82,7 @@ function parseDepartureTime(timeInput) {
 
     const parsed = new Date(timeInput);
     if (isNaN(parsed.getTime())) {
-        return new Date(Date.now() + 60 * 60 * 1000);
+        return fallback;
     }
     return parsed;
 }
@@ -225,6 +227,7 @@ function mapRideRow(row) {
     return {
         id: row.id,
         driver_id: row.driver_id,
+        vehicle_id: row.vehicle_id || null,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_phone: row.driver_phone || null,
         driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
@@ -257,18 +260,28 @@ async function createRide(req, res) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
-    const startCoords = resolvePointCoordinates(
-        req.body.start_point || req.body.from || { lat: req.body.start_lat, lon: req.body.start_lon },
-        DEFAULT_START
+    const rawStart = req.body.start_point || req.body.from || (
+        req.body.start_lat !== undefined && req.body.start_lon !== undefined
+            ? { lat: req.body.start_lat, lon: req.body.start_lon }
+            : null
     );
-    const endCoords = resolvePointCoordinates(
-        req.body.end_point || req.body.to || { lat: req.body.end_lat, lon: req.body.end_lon },
-        DEFAULT_END
+    const startCoords = resolvePointCoordinates(rawStart, DEFAULT_START);
+
+    const rawEnd = req.body.end_point || req.body.to || (
+        req.body.end_lat !== undefined && req.body.end_lon !== undefined
+            ? { lat: req.body.end_lat, lon: req.body.end_lon }
+            : null
     );
+    const endCoords = resolvePointCoordinates(rawEnd, DEFAULT_END);
+
+    const vehicleId = req.body.vehicle_id || null;
+    if (vehicleId && !isValidUuid(vehicleId)) {
+        return res.status(400).json({ error: 'Некорректный формат vehicle_id' });
+    }
 
     const departureTime = parseDepartureTime(req.body.departure_time || req.body.time);
-    const totalSeats = Math.max(1, parseInt(req.body.total_seats || 4, 10));
-    const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats || totalSeats, 10)));
+    const totalSeats = Math.min(8, Math.max(1, parseInt(req.body.total_seats || 4, 10)));
+    const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats !== undefined ? req.body.available_seats : totalSeats, 10)));
 
     const client = await pool.connect();
     try {
@@ -281,6 +294,17 @@ async function createRide(req, res) {
         if (driverCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Водитель с указанным ID не найден в базе данных' });
+        }
+
+        if (vehicleId) {
+            const vehicleCheck = await client.query(
+                'SELECT id FROM vehicles WHERE id = $1 AND driver_id = $2',
+                [vehicleId, driverId]
+            );
+            if (vehicleCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Указанный автомобиль не найден или не принадлежит водителю' });
+            }
         }
 
         const distanceKm = await calculateDistanceKm(client, startCoords.lon, startCoords.lat, endCoords.lon, endCoords.lat);
@@ -305,6 +329,7 @@ async function createRide(req, res) {
         const insertQuery = `
             INSERT INTO rides (
                 driver_id,
+                vehicle_id,
                 departure_time,
                 start_point,
                 end_point,
@@ -315,16 +340,18 @@ async function createRide(req, res) {
             ) VALUES (
                 $1,
                 $2,
-                ST_SetSRID(ST_MakePoint($3, $4), 4326),
-                ST_SetSRID(ST_MakePoint($5, $6), 4326),
-                $7,
+                $3,
+                ST_SetSRID(ST_MakePoint($4, $5), 4326),
+                ST_SetSRID(ST_MakePoint($6, $7), 4326),
                 $8,
                 $9,
+                $10,
                 'scheduled'
             )
             RETURNING 
                 id,
                 driver_id,
+                vehicle_id,
                 departure_time,
                 ST_X(start_point) as start_lon,
                 ST_Y(start_point) as start_lat,
@@ -340,6 +367,7 @@ async function createRide(req, res) {
 
         const result = await client.query(insertQuery, [
             driverId,
+            vehicleId,
             departureTime,
             startCoords.lon,
             startCoords.lat,
@@ -437,6 +465,7 @@ async function getRides(req, res) {
         SELECT 
             r.id,
             r.driver_id,
+            r.vehicle_id,
             u.username as driver_username,
             u.first_name as driver_first_name,
             u.last_name as driver_last_name,
@@ -491,7 +520,10 @@ async function joinRide(req, res) {
         await client.query('BEGIN');
 
         // Проверка существования поездки
-        const rideCheck = await client.query('SELECT * FROM rides WHERE id = $1 FOR UPDATE', [rideId]);
+        const rideCheck = await client.query(
+            'SELECT id, driver_id, status, available_seats, total_seats, base_price FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
         if (rideCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });
@@ -577,7 +609,10 @@ async function leaveRide(req, res) {
         await client.query('BEGIN');
 
         // Проверка существования поездки
-        const rideCheck = await client.query('SELECT * FROM rides WHERE id = $1 FOR UPDATE', [rideId]);
+        const rideCheck = await client.query(
+            'SELECT id, driver_id, status, available_seats, total_seats FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
         if (rideCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });

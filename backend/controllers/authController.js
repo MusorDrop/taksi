@@ -6,9 +6,16 @@ const { JWT_SECRET } = require('../middleware/authMiddleware');
 /**
  * Санитизация объекта пользователя для безопасного ответа клиенту
  * @param {object} user - Запись пользователя из базы данных
+ * @param {number|null} [averageRating=null] - Рассчитанный средний рейтинг пользователя
  * @returns {object} Профиль пользователя без пароля
  */
-function formatUserProfile(user) {
+function formatUserProfile(user, averageRating = null) {
+    const avg = averageRating !== null && averageRating !== undefined
+        ? Number(averageRating)
+        : (user.average_rating !== null && user.average_rating !== undefined
+            ? Number(user.average_rating)
+            : (user.rating !== null && user.rating !== undefined ? Number(user.rating) : null));
+
     return {
         id: user.id,
         username: user.username,
@@ -16,7 +23,8 @@ function formatUserProfile(user) {
         last_name: user.last_name,
         phone: user.phone,
         role: user.role,
-        rating: user.rating !== null ? Number(user.rating) : null,
+        rating: avg,
+        average_rating: avg,
         is_verified: user.is_verified,
         emergency_contact: user.emergency_contact,
         preferences: user.preferences,
@@ -49,7 +57,7 @@ async function registerUser({ username, password, firstName, lastName, phone, ro
     const query = `
         INSERT INTO users (username, password_hash, first_name, last_name, phone, role)
         VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
+        RETURNING id, username, first_name, last_name, phone, role, rating, is_verified, emergency_contact, preferences, created_at
     `;
     const values = [username, passwordHash, firstName, lastName, phone, role];
     const result = await pool.query(query, values);
@@ -77,14 +85,13 @@ async function register(req, res) {
     }
 
     // Проверка пароля на пустоту и минимальную длину (не менее 8 символов)
-    if (typeof password !== 'string' || !password.trim()) {
+    if (typeof password !== 'string' || password.length === 0) {
         return res.status(400).json({
             error: 'Пароль не может быть пустым'
         });
     }
 
-    const trimmedPassword = password.trim();
-    if (trimmedPassword.length < 8) {
+    if (password.length < 8) {
         return res.status(400).json({
             error: 'Пароль должен содержать как минимум 8 символов'
         });
@@ -102,7 +109,7 @@ async function register(req, res) {
     try {
         const newUser = await registerUser({
             username: trimmedUsername,
-            password: trimmedPassword,
+            password: password,
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
             phone: phone ? phone.trim() : null,
@@ -142,9 +149,8 @@ async function login(req, res) {
     }
 
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
-    const trimmedPassword = typeof password === 'string' ? password.trim() : '';
 
-    if (!trimmedUsername || !trimmedPassword) {
+    if (!trimmedUsername || typeof password !== 'string' || password.length === 0) {
         return res.status(400).json({
             error: 'Поля username и password обязательны для заполнения'
         });
@@ -155,14 +161,14 @@ async function login(req, res) {
         const result = await pool.query(userQuery, [trimmedUsername]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Пользователь не найден' });
+            return res.status(401).json({ error: 'Неверный логин или пароль' });
         }
 
         const user = result.rows[0];
-        const isMatch = await bcrypt.compare(trimmedPassword, user.password_hash);
+        const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
-            return res.status(401).json({ error: 'Неверный пароль' });
+            return res.status(401).json({ error: 'Неверный логин или пароль' });
         }
 
         const token = createToken(user);
@@ -187,14 +193,41 @@ async function getProfile(req, res) {
     }
 
     try {
-        const query = 'SELECT * FROM users WHERE id = $1';
+        const query = `
+            SELECT 
+                u.id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                u.phone,
+                u.role,
+                u.rating,
+                u.is_verified,
+                u.emergency_contact,
+                u.preferences,
+                u.created_at,
+                (SELECT ROUND(AVG(rating)::numeric, 2) FROM reviews WHERE reviewee_id = u.id) AS average_rating,
+                (SELECT COUNT(*)::int FROM reviews WHERE reviewee_id = u.id) AS reviews_count
+            FROM users u
+            WHERE u.id = $1
+        `;
         const result = await pool.query(query, [req.user.id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
 
-        return res.json({ user: formatUserProfile(result.rows[0]) });
+        const userRow = result.rows[0];
+        const averageRating = userRow.average_rating !== null && userRow.average_rating !== undefined
+            ? Number(userRow.average_rating)
+            : null;
+        const formattedUser = formatUserProfile(userRow, averageRating);
+
+        return res.json({
+            user: formattedUser,
+            average_rating: averageRating,
+            reviews_count: userRow.reviews_count || 0
+        });
     } catch (err) {
         console.error('Ошибка получения профиля:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера' });

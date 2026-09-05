@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_name VARCHAR(100),
     phone VARCHAR(20),
     role user_role NOT NULL DEFAULT 'both',
-    rating NUMERIC(3, 2) DEFAULT NULL,
+    rating NUMERIC(3, 2) DEFAULT NULL CHECK (rating >= 1.0 AND rating <= 5.0),
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     emergency_contact VARCHAR(255),
     preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -44,11 +44,10 @@ CREATE TABLE IF NOT EXISTS users (
 -- Таблица транспортных средств
 CREATE TABLE IF NOT EXISTS vehicles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    make_model VARCHAR(150) NOT NULL,
-    plate_number VARCHAR(20) NOT NULL,
+    driver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    brand VARCHAR(150) NOT NULL,
     color VARCHAR(50),
-    capacity INTEGER NOT NULL DEFAULT 4,
+    license_plate VARCHAR(20) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -65,7 +64,8 @@ CREATE TABLE IF NOT EXISTS rides (
     available_seats INTEGER NOT NULL DEFAULT 4,
     status ride_status NOT NULL DEFAULT 'scheduled',
     base_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats)
 );
 
 -- Таблица совпадений (бронирований поездок)
@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS matches (
     dropoff_point GEOMETRY(Point, 4326),
     agreed_price NUMERIC(10, 2) NOT NULL,
     status match_status NOT NULL DEFAULT 'accepted',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id)
 );
 
 -- Таблица отзывов и оценок
@@ -101,3 +102,23 @@ CREATE INDEX IF NOT EXISTS idx_rides_end_point ON rides USING GIST (end_point);
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id ON matches(ride_id);
 CREATE INDEX IF NOT EXISTS idx_matches_passenger_id ON matches(passenger_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_ride_id ON reviews(ride_id);
+
+-- Обеспечение наличия ограничений для ранее созданных таблиц (идемпотентный ALTER)
+DO $$ BEGIN
+    ALTER TABLE users ADD CONSTRAINT chk_users_rating CHECK (rating >= 1.0 AND rating <= 5.0);
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE rides ADD CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats);
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE matches ADD CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id);
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
