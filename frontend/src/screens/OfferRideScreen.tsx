@@ -13,6 +13,8 @@ import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import SendIcon from '@mui/icons-material/Send';
@@ -21,6 +23,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import RepeatIcon from '@mui/icons-material/Repeat';
 import RouteMap from '../components/RouteMap';
 import { useApp } from '../AppContext';
 import type { Vehicle, VehiclesResponse } from '../types';
@@ -38,6 +41,8 @@ function getTodayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
+const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
 // Indigo/violet accent palette for the AI recommendation surface — kept local
 // to this screen so the rest of the app's MUI theme (blue) is untouched.
 const AI_ACCENT = {
@@ -51,10 +56,16 @@ const AI_ACCENT = {
   buttonHover: '#4f46e5',
 };
 
-export default function OfferRideScreen() {
+interface OfferRideScreenProps {
+  onNavigateToProfile?: () => void;
+}
+
+export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreenProps) {
   const { addRide, user } = useApp();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [rideType, setRideType] = useState<'one_off' | 'regular'>('one_off');
+  const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
   const [date, setDate] = useState<string>(getTodayDateString);
   const [time, setTime] = useState('08:00');
   const [telegram, setTelegram] = useState(user?.telegram ?? '');
@@ -62,6 +73,7 @@ export default function OfferRideScreen() {
   const [success, setSuccess] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [isVehiclesLoading, setIsVehiclesLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -83,12 +95,18 @@ export default function OfferRideScreen() {
         const res = await api.get<VehiclesResponse>('/api/vehicles', {
           signal: controller.signal,
         });
-        if (isMounted && res?.vehicles && res.vehicles.length > 0) {
+        if (isMounted && res?.vehicles) {
           setVehicles(res.vehicles);
-          setSelectedVehicleId(res.vehicles[0].id);
+          if (res.vehicles.length > 0) {
+            setSelectedVehicleId(res.vehicles[0].id);
+          }
         }
       } catch {
         // При недоступности бэкенда или отмене запроса форма работает без выбора автомобиля
+      } finally {
+        if (isMounted) {
+          setIsVehiclesLoading(false);
+        }
       }
     }
 
@@ -99,6 +117,8 @@ export default function OfferRideScreen() {
       controller.abort();
     };
   }, []);
+
+  const hasNoVehicles = !isVehiclesLoading && vehicles.length === 0;
 
   // The route distance is only "known" once both endpoints are filled in —
   // before that, the AI box simulates not having resolved a route yet and
@@ -118,10 +138,25 @@ export default function OfferRideScreen() {
 
   const parsedPrice = price.trim() === '' ? null : Number(price);
   const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
-  const canSubmit = Boolean(from.trim() && to.trim() && telegram.trim() && isPriceValid && date && time);
+  const isDateOrDaysValid = rideType === 'one_off' ? Boolean(date) : regularDays.length > 0;
+  const canSubmit = Boolean(
+    !hasNoVehicles &&
+    from.trim() &&
+    to.trim() &&
+    telegram.trim() &&
+    isPriceValid &&
+    isDateOrDaysValid &&
+    time
+  );
 
   const handleApplyRecommendation = () => {
     setPrice(String(recommendedPrice));
+  };
+
+  const handleDayToggle = (day: string) => {
+    setRegularDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
   };
 
   const handleSubmit = async (e: FormEvent): Promise<void> => {
@@ -136,11 +171,14 @@ export default function OfferRideScreen() {
         ? departureDate.toISOString()
         : new Date().toISOString();
 
+      const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
+      const totalSeats = selectedVehicle?.seats || 4;
+
       await addRide({
         from,
         to,
-        dateFormatted: formatDateString(departureIso),
-        dateString: formatDateString(departureIso),
+        dateFormatted: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
+        dateString: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
         departure_time: departureIso,
         departureTime: departureIso,
         time,
@@ -149,6 +187,11 @@ export default function OfferRideScreen() {
         distanceKm: distanceKm ?? estimateDistance(from, to),
         isPeak: peak,
         vehicleId: selectedVehicleId || undefined,
+        totalSeats,
+        rideType,
+        ride_type: rideType,
+        regularDays: rideType === 'regular' ? regularDays.join(', ') : null,
+        regular_days: rideType === 'regular' ? regularDays.join(', ') : null,
       });
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
       setSuccess(true);
@@ -181,6 +224,22 @@ export default function OfferRideScreen() {
         </Alert>
       )}
 
+      {hasNoVehicles && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={
+            onNavigateToProfile ? (
+              <Button color="inherit" size="small" onClick={onNavigateToProfile} sx={{ fontWeight: 600 }}>
+                В профиль
+              </Button>
+            ) : null
+          }
+        >
+          Сначала добавьте автомобиль в профиле, чтобы предложить поездку.
+        </Alert>
+      )}
+
       {success && (
         <Paper
           sx={{
@@ -204,6 +263,7 @@ export default function OfferRideScreen() {
             label="Откуда (Точка А)"
             placeholder="Например: Центральная библиотека"
             value={from}
+            disabled={hasNoVehicles}
             onChange={(e) => setFrom(e.target.value)}
             slotProps={{
               input: {
@@ -220,6 +280,7 @@ export default function OfferRideScreen() {
             label="Куда (Точка Б)"
             placeholder="Например: Северный кампус"
             value={to}
+            disabled={hasNoVehicles}
             onChange={(e) => setTo(e.target.value)}
             slotProps={{
               input: {
@@ -234,29 +295,86 @@ export default function OfferRideScreen() {
 
           <RouteMap from={from || 'Точка А'} to={to || 'Точка Б'} />
 
-          <TextField
-            fullWidth
-            label="Дата поездки"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            slotProps={{
-              inputLabel: { shrink: true },
-              htmlInput: { min: getTodayDateString() },
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <CalendarTodayIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+              Тип поездки
+            </Typography>
+            <ToggleButtonGroup
+              value={rideType}
+              exclusive
+              disabled={hasNoVehicles}
+              onChange={(_, val) => {
+                if (val) setRideType(val);
+              }}
+              fullWidth
+              size="small"
+            >
+              <ToggleButton value="one_off" sx={{ textTransform: 'none', fontWeight: 500 }}>
+                <CalendarTodayIcon sx={{ fontSize: 16, mr: 1 }} />
+                Одноразовая
+              </ToggleButton>
+              <ToggleButton value="regular" sx={{ textTransform: 'none', fontWeight: 500 }}>
+                <RepeatIcon sx={{ fontSize: 16, mr: 1 }} />
+                Регулярная
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+
+          {rideType === 'one_off' ? (
+            <TextField
+              fullWidth
+              label="Дата поездки"
+              type="date"
+              disabled={hasNoVehicles}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              slotProps={{
+                inputLabel: { shrink: true },
+                htmlInput: { min: getTodayDateString() },
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <CalendarTodayIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          ) : (
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 500 }}>
+                Дни недели:
+              </Typography>
+              <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+                {WEEK_DAYS.map((day) => {
+                  const isSelected = regularDays.includes(day);
+                  return (
+                    <Chip
+                      key={day}
+                      label={day}
+                      clickable={!hasNoVehicles}
+                      disabled={hasNoVehicles}
+                      color={isSelected ? 'primary' : 'default'}
+                      variant={isSelected ? 'filled' : 'outlined'}
+                      onClick={() => handleDayToggle(day)}
+                      sx={{ fontWeight: 600, minWidth: 40 }}
+                    />
+                  );
+                })}
+              </Stack>
+              {regularDays.length === 0 && (
+                <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+                  Выберите хотя бы один день недели
+                </Typography>
+              )}
+            </Box>
+          )}
 
           <TextField
             fullWidth
             label="Время выезда"
             type="time"
+            disabled={hasNoVehicles}
             value={time}
             onChange={(e) => setTime(e.target.value)}
             slotProps={{
@@ -276,6 +394,7 @@ export default function OfferRideScreen() {
             label="Ваша цена за место (₽)"
             placeholder="Например, 150"
             type="number"
+            disabled={hasNoVehicles}
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             slotProps={{
@@ -337,6 +456,7 @@ export default function OfferRideScreen() {
             <Button
               fullWidth
               variant="contained"
+              disabled={hasNoVehicles}
               onClick={handleApplyRecommendation}
               sx={{
                 bgcolor: AI_ACCENT.button,
@@ -348,7 +468,7 @@ export default function OfferRideScreen() {
           </Paper>
 
           {vehicles.length > 0 && (
-            <FormControl fullWidth>
+            <FormControl fullWidth disabled={hasNoVehicles}>
               <InputLabel id="offer-vehicle-label">Автомобиль</InputLabel>
               <Select
                 labelId="offer-vehicle-label"
@@ -361,12 +481,9 @@ export default function OfferRideScreen() {
                   </InputAdornment>
                 }
               >
-                <MenuItem value="">
-                  <em>Без автомобиля</em>
-                </MenuItem>
                 {vehicles.map((v) => (
                   <MenuItem key={v.id} value={v.id}>
-                    {v.brand} ({v.license_plate}){v.color ? ` • ${v.color}` : ''}
+                    {v.brand} ({v.license_plate}){v.color ? ` • ${v.color}` : ''} • {v.seats ?? 4} мест
                   </MenuItem>
                 ))}
               </Select>
@@ -377,6 +494,7 @@ export default function OfferRideScreen() {
             fullWidth
             label="Ваш Telegram (@username)"
             placeholder="@username"
+            disabled={hasNoVehicles}
             value={telegram}
             onChange={(e) => setTelegram(e.target.value)}
             slotProps={{

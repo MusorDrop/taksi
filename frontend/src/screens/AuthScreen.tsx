@@ -13,6 +13,7 @@ import Link from '@mui/material/Link';
 import { useTheme } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import LockIcon from '@mui/icons-material/Lock';
+import PhoneIcon from '@mui/icons-material/Phone';
 import { useApp } from '../AppContext';
 import { api } from '../api';
 import type { AuthResponse } from '../types';
@@ -26,6 +27,7 @@ export default function AuthScreen() {
   const [tabIndex, setTabIndex] = useState<number>(0);
   const [username, setUsername] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [phone, setPhone] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showTerms, setShowTerms] = useState<boolean>(false);
@@ -38,9 +40,15 @@ export default function AuthScreen() {
 
     const trimmedUsername = username.trim();
     const trimmedPassword = password.trim();
+    const trimmedPhone = phone.trim();
 
     if (!trimmedUsername || !trimmedPassword) {
       setErrorMessage('Пожалуйста, укажите логин и пароль');
+      return;
+    }
+
+    if (isRegisterMode && !trimmedPhone) {
+      setErrorMessage('Пожалуйста, укажите номер телефона');
       return;
     }
 
@@ -58,6 +66,7 @@ export default function AuthScreen() {
         ? {
             username: trimmedUsername,
             password: trimmedPassword,
+            phone: trimmedPhone,
             first_name: trimmedUsername,
             role: 'both',
           }
@@ -195,6 +204,26 @@ export default function AuthScreen() {
                 },
               }}
             />
+            {isRegisterMode && (
+              <TextField
+                fullWidth
+                label="Номер телефона *"
+                placeholder="+7 (999) 123-45-67"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                disabled={loading}
+                required
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PhoneIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+            )}
             <Button
               type="submit"
               fullWidth

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import type { Ride, User, BackendRide, BackendUser, RidesResponse } from './types';
+import type { Ride, User, BackendRide, BackendUser, RidesResponse, PassengerInfo } from './types';
 import { api, getAuthToken, setAuthToken, removeAuthToken } from './api';
 import { mapBackendRideToRide } from './utils';
 
@@ -15,6 +15,8 @@ export interface AppContextValue {
   ridesError: string | null;
   fetchRides: (signal?: AbortSignal) => Promise<void>;
   addRide: (ride: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName' | 'currentPrice'>) => Promise<void> | void;
+  updateRide: (rideId: string, payload: Record<string, unknown>) => Promise<void>;
+  kickPassenger: (rideId: string, passengerId: string) => Promise<void>;
   passengerRideIds: string[];
   joinRide: (rideId: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
@@ -166,6 +168,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         price: rideData.price,
         base_price: rideData.price,
         total_seats: rideData.totalSeats || 4,
+        ride_type: rideData.ride_type || rideData.rideType || 'one_off',
+        regular_days: rideData.regular_days || rideData.regularDays || null,
       };
 
       if (rideData.vehicleId) {
@@ -179,6 +183,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
     [user],
+  );
+
+  const updateRide = useCallback(
+    async (rideId: string, payload: Record<string, unknown>): Promise<void> => {
+      const response = await api.patch<{ message: string; ride: BackendRide }>(`/api/rides/${rideId}`, payload);
+      if (response?.ride) {
+        const updated = mapBackendRideToRide(response.ride);
+        setRides((prev) => prev.map((r) => (r.id === rideId ? updated : r)));
+      }
+    },
+    [],
+  );
+
+  const kickPassenger = useCallback(
+    async (rideId: string, passengerId: string): Promise<void> => {
+      const response = await api.delete<{
+        message: string;
+        available_seats?: number;
+        passengers?: PassengerInfo[];
+      }>(`/api/rides/${rideId}/passengers/${passengerId}`);
+
+      setRides((prev) =>
+        prev.map((r) => {
+          if (r.id !== rideId) return r;
+          const updatedPassengers = response?.passengers ?? (r.passengers || []).filter((p) => p.id !== passengerId);
+          const updatedPassengerIds = updatedPassengers.map((p) => p.id);
+          const updatedSeats = response?.available_seats !== undefined
+            ? response.available_seats
+            : (r.availableSeats !== undefined ? r.availableSeats + 1 : undefined);
+          return {
+            ...r,
+            availableSeats: updatedSeats,
+            passengers: updatedPassengers,
+            passengerIds: updatedPassengerIds,
+          };
+        }),
+      );
+    },
+    [],
   );
 
   // Синхронизация забронированных поездок текущего пользователя при обновлении списка
@@ -202,7 +245,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 1. Мгновенное оптимистичное обновление списка забронированных поездок пассажира
     setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
 
-    // 2. Мгновенный оптимистичный пересчет мест и цены Split Fare без ожидания F5
+    // 2. Мгновенный оптимистичный пересчет мест с сохранением фиксированной цены
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -212,11 +255,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           currentPassengers.push(myId);
         }
         const updatedSeats = Math.max(0, (r.availableSeats ?? 1) - 1);
-        const updatedPrice = Math.ceil(r.price / Math.max(currentPassengers.length, 1));
         return {
           ...r,
           availableSeats: updatedSeats,
-          currentPrice: updatedPrice,
+          currentPrice: r.price,
           passengerIds: currentPassengers,
         };
       }),
@@ -239,13 +281,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ? response.available_seats
               : r.availableSeats;
             const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
-            const updatedPrice = response.current_price !== undefined
-              ? response.current_price
-              : Math.ceil(r.price / Math.max(updatedPassengerIds?.length || 1, 1));
             return {
               ...r,
               availableSeats: updatedSeats,
-              currentPrice: updatedPrice,
+              currentPrice: r.price,
               passengerIds: updatedPassengerIds,
             };
           }),
@@ -262,7 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 1. Мгновенное оптимистичное удаление из списка моих поездок
     setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
 
-    // 2. Мгновенный оптимистичный пересчет свободных мест и Split Fare цены
+    // 2. Мгновенный оптимистичный пересчет свободных мест с фиксированной ценой
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -271,11 +310,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const updatedSeats = r.totalSeats !== undefined
           ? Math.min(r.totalSeats, (r.availableSeats ?? 0) + 1)
           : (r.availableSeats ?? 0) + 1;
-        const updatedPrice = Math.ceil(r.price / Math.max(currentPassengers.length, 1));
         return {
           ...r,
           availableSeats: updatedSeats,
-          currentPrice: updatedPrice,
+          currentPrice: r.price,
           passengerIds: currentPassengers,
         };
       }),
@@ -298,13 +336,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ? response.available_seats
               : r.availableSeats;
             const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
-            const updatedPrice = response.current_price !== undefined
-              ? response.current_price
-              : Math.ceil(r.price / Math.max(updatedPassengerIds?.length || 1, 1));
             return {
               ...r,
               availableSeats: updatedSeats,
-              currentPrice: updatedPrice,
+              currentPrice: r.price,
               passengerIds: updatedPassengerIds,
             };
           }),
@@ -330,6 +365,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ridesError,
       fetchRides,
       addRide,
+      updateRide,
+      kickPassenger,
       passengerRideIds,
       joinRide,
       leaveRide,
@@ -346,6 +383,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ridesError,
       fetchRides,
       addRide,
+      updateRide,
+      kickPassenger,
       passengerRideIds,
       joinRide,
       leaveRide,

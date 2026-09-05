@@ -22,6 +22,15 @@ export const DAY_FULL: Record<DayKey, string> = {
   Sun: 'Воскресенье',
 };
 
+export interface PassengerInfo {
+  id: string;
+  name?: string;
+  username?: string;
+  telegram?: string;
+  phone?: string | null;
+  avatar_url?: string | null;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -37,6 +46,8 @@ export interface Ride {
   id: string;
   driverId: string;
   driverName: string;
+  driverUsername?: string | null;
+  driverPhone?: string | null;
   from: string;
   to: string;
   dateFormatted: string;
@@ -48,6 +59,7 @@ export interface Ride {
   price: number;
   currentPrice: number;
   passengerIds?: string[];
+  passengers?: PassengerInfo[];
   distanceKm: number;
   isPeak: boolean;
   createdAt: number;
@@ -55,6 +67,10 @@ export interface Ride {
   totalSeats?: number;
   vehicleId?: string | null;
   status?: string;
+  rideType?: 'one_off' | 'regular';
+  ride_type?: 'one_off' | 'regular';
+  regularDays?: string | null;
+  regular_days?: string | null;
   averageRating?: number | null;
   driverAvatarUrl?: string | null;
 }
@@ -96,6 +112,7 @@ export interface BackendRide {
   driver_id: string;
   vehicle_id?: string | null;
   driver_name: string;
+  driver_username?: string | null;
   driver_phone?: string | null;
   driver_rating?: number | null;
   average_rating?: number | string | null;
@@ -114,9 +131,12 @@ export interface BackendRide {
   base_price: number;
   current_price?: number;
   passenger_ids?: string[];
+  passengers?: PassengerInfo[];
   total_seats?: number;
   available_seats?: number;
   status?: string;
+  ride_type?: 'one_off' | 'regular';
+  regular_days?: string | null;
   created_at?: string;
 }
 
@@ -137,6 +157,7 @@ export interface Vehicle {
   brand: string;
   color?: string | null;
   license_plate: string;
+  seats?: number;
   created_at?: string;
 }
 

@@ -12,6 +12,12 @@ import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import PersonIcon from '@mui/icons-material/Person';
@@ -20,6 +26,8 @@ import SendIcon from '@mui/icons-material/Send';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import EditIcon from '@mui/icons-material/Edit';
+import PhoneIcon from '@mui/icons-material/Phone';
 import { useApp } from '../AppContext';
 import { useThemeMode } from '../ThemeModeContext';
 import { api } from '../api';
@@ -43,16 +51,36 @@ export default function ProfileScreen() {
   const [brand, setBrand] = useState<string>('');
   const [licensePlate, setLicensePlate] = useState<string>('');
   const [color, setColor] = useState<string>('');
+  const [seats, setSeats] = useState<number>(4);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
+  // Состояния для редактирования контактов (телефон и Telegram)
+  const [showEditContacts, setShowEditContacts] = useState<boolean>(false);
+  const [editPhone, setEditPhone] = useState<string>('');
+  const [editTelegram, setEditTelegram] = useState<string>('');
+  const [isSavingContacts, setIsSavingContacts] = useState<boolean>(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  const [contactsSuccess, setContactsSuccess] = useState<boolean>(false);
+
+  // Состояния для редактирования автомобиля
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [editBrand, setEditBrand] = useState<string>('');
+  const [editLicensePlate, setEditLicensePlate] = useState<string>('');
+  const [editColor, setEditColor] = useState<string>('');
+  const [editSeats, setEditSeats] = useState<number>(4);
+  const [isUpdatingVehicle, setIsUpdatingVehicle] = useState<boolean>(false);
+  const [editVehicleError, setEditVehicleError] = useState<string | null>(null);
+
   const saveSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const avatarSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contactsSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
       if (avatarSuccessTimerRef.current) clearTimeout(avatarSuccessTimerRef.current);
+      if (contactsSuccessTimerRef.current) clearTimeout(contactsSuccessTimerRef.current);
     };
   }, []);
 
@@ -92,7 +120,44 @@ export default function ProfileScreen() {
     };
   }, []);
 
-  // Добавление нового автомобиля водителя
+  // Сохранение отредактированных контактов (телефон и Telegram)
+  const handleSaveContacts = async (e?: FormEvent): Promise<void> => {
+    if (e) e.preventDefault();
+    if (!editPhone.trim() || !editTelegram.trim() || isSavingContacts) return;
+
+    setIsSavingContacts(true);
+    setContactsError(null);
+    setContactsSuccess(false);
+
+    try {
+      const res = await api.patch<{ message: string; user: BackendUser }>('/api/auth/me', {
+        phone: editPhone.trim(),
+        telegram: editTelegram.trim(),
+      });
+
+      if (res?.user) {
+        updateUser({
+          phone: res.user.phone ?? undefined,
+          telegram: res.user.username,
+          name: res.user.first_name || res.user.username,
+        });
+        setShowEditContacts(false);
+        if (contactsSuccessTimerRef.current) clearTimeout(contactsSuccessTimerRef.current);
+        setContactsSuccess(true);
+        contactsSuccessTimerRef.current = setTimeout(() => {
+          setContactsSuccess(false);
+          contactsSuccessTimerRef.current = null;
+        }, 3000);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось обновить контакты';
+      setContactsError(message);
+    } finally {
+      setIsSavingContacts(false);
+    }
+  };
+
+  // Добавление нового автомобиля водителя с указанием количества мест
   const handleAddVehicle = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (!brand.trim() || !licensePlate.trim() || isSaving) return;
@@ -106,6 +171,7 @@ export default function ProfileScreen() {
         brand: brand.trim(),
         license_plate: licensePlate.trim(),
         color: color.trim() || undefined,
+        seats: Number(seats) || 4,
       });
 
       if (res?.vehicle) {
@@ -113,6 +179,7 @@ export default function ProfileScreen() {
         setBrand('');
         setLicensePlate('');
         setColor('');
+        setSeats(4);
         setShowAddForm(false);
         if (saveSuccessTimerRef.current) clearTimeout(saveSuccessTimerRef.current);
         setSaveSuccess(true);
@@ -126,6 +193,34 @@ export default function ProfileScreen() {
       setVehicleError(message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Сохранение изменений автомобиля
+  const handleUpdateVehicle = async (e?: FormEvent): Promise<void> => {
+    if (e) e.preventDefault();
+    if (!editingVehicle || !editBrand.trim() || !editLicensePlate.trim() || isUpdatingVehicle) return;
+
+    setIsUpdatingVehicle(true);
+    setEditVehicleError(null);
+
+    try {
+      const res = await api.patch<{ message: string; vehicle: Vehicle }>(`/api/vehicles/${editingVehicle.id}`, {
+        brand: editBrand.trim(),
+        license_plate: editLicensePlate.trim(),
+        color: editColor.trim() || undefined,
+        seats: Number(editSeats) || 4,
+      });
+
+      if (res?.vehicle) {
+        setVehicles((prev) => prev.map((v) => (v.id === editingVehicle.id ? res.vehicle : v)));
+        setEditingVehicle(null);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось обновить автомобиль';
+      setEditVehicleError(message);
+    } finally {
+      setIsUpdatingVehicle(false);
     }
   };
 
@@ -266,6 +361,38 @@ export default function ProfileScreen() {
             @{user.telegram}
           </Typography>
         </Stack>
+
+        {user.phone && (
+          <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" sx={{ mt: 0.5 }}>
+            <PhoneIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+            <Typography variant="body2" color="text.secondary">
+              {user.phone}
+            </Typography>
+          </Stack>
+        )}
+
+        {contactsSuccess && (
+          <Alert severity="success" sx={{ mt: 1.5, py: 0.5, fontSize: '0.8125rem' }}>
+            Контакты успешно обновлены!
+          </Alert>
+        )}
+
+        <Box sx={{ mt: 1.5 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<EditIcon sx={{ fontSize: 16 }} />}
+            onClick={() => {
+              setEditPhone(user.phone || '');
+              setEditTelegram(user.telegram || '');
+              setContactsError(null);
+              setShowEditContacts(true);
+            }}
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+          >
+            Изменить телефон и TG
+          </Button>
+        </Box>
       </Paper>
 
       <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
@@ -366,6 +493,16 @@ export default function ProfileScreen() {
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
               />
+              <TextField
+                fullWidth
+                size="small"
+                label="Количество мест *"
+                type="number"
+                value={seats}
+                onChange={(e) => setSeats(Math.min(8, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                inputProps={{ min: 1, max: 8 }}
+                required
+              />
               <Button
                 type="submit"
                 variant="contained"
@@ -406,22 +543,46 @@ export default function ProfileScreen() {
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                     {v.brand}
                   </Typography>
-                  {v.color && (
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.25 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Цвет: {v.color}
+                      {v.seats ?? 4} {(v.seats ?? 4) === 1 ? 'место' : ((v.seats ?? 4) < 5 ? 'места' : 'мест')}
                     </Typography>
-                  )}
+                    {v.color && (
+                      <Typography variant="caption" color="text.secondary">
+                        • {v.color}
+                      </Typography>
+                    )}
+                  </Stack>
                 </Box>
-                <Chip
-                  label={v.license_plate}
-                  size="small"
-                  sx={{
-                    fontFamily: 'monospace',
-                    fontWeight: 700,
-                    letterSpacing: 0.5,
-                    bgcolor: 'grey.100',
-                  }}
-                />
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    label={v.license_plate}
+                    size="small"
+                    sx={(theme) => ({
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      letterSpacing: 0.5,
+                      bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.200',
+                      color: theme.palette.mode === 'dark' ? '#fff' : '#000',
+                      border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.2)' : '1px solid #ccc',
+                    })}
+                  />
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => {
+                      setEditingVehicle(v);
+                      setEditBrand(v.brand);
+                      setEditLicensePlate(v.license_plate);
+                      setEditColor(v.color || '');
+                      setEditSeats(v.seats ?? 4);
+                      setEditVehicleError(null);
+                    }}
+                    title="Редактировать автомобиль"
+                  >
+                    <EditIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Stack>
               </Paper>
             ))}
           </Stack>
@@ -454,6 +615,135 @@ export default function ProfileScreen() {
           Выйти
         </Button>
       </Stack>
+
+      {/* Модальное окно редактирования контактов (телефон и TG) */}
+      <Dialog
+        open={showEditContacts}
+        onClose={() => setShowEditContacts(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Изменить контакты</DialogTitle>
+        <DialogContent>
+          {contactsError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {contactsError}
+            </Alert>
+          )}
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Номер телефона *"
+              placeholder="+7 (999) 123-45-67"
+              value={editPhone}
+              onChange={(e) => setEditPhone(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <PhoneIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Telegram username (@...)"
+              placeholder="@username"
+              value={editTelegram}
+              onChange={(e) => setEditTelegram(e.target.value)}
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SendIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setShowEditContacts(false)} disabled={isSavingContacts}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveContacts}
+            disabled={!editPhone.trim() || !editTelegram.trim() || isSavingContacts}
+          >
+            {isSavingContacts ? 'Сохранение...' : 'Сохранить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Модальное окно редактирования автомобиля */}
+      <Dialog
+        open={Boolean(editingVehicle)}
+        onClose={() => setEditingVehicle(null)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Редактировать автомобиль</DialogTitle>
+        <DialogContent>
+          {editVehicleError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {editVehicleError}
+            </Alert>
+          )}
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Марка и модель *"
+              value={editBrand}
+              onChange={(e) => setEditBrand(e.target.value)}
+              required
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Госномер *"
+              value={editLicensePlate}
+              onChange={(e) => setEditLicensePlate(e.target.value)}
+              required
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Цвет"
+              value={editColor}
+              onChange={(e) => setEditColor(e.target.value)}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Количество мест *"
+              type="number"
+              value={editSeats}
+              onChange={(e) => setEditSeats(Math.min(8, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+              inputProps={{ min: 1, max: 8 }}
+              required
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditingVehicle(null)} disabled={isUpdatingVehicle}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUpdateVehicle}
+            disabled={!editBrand.trim() || !editLicensePlate.trim() || isUpdatingVehicle}
+          >
+            {isUpdatingVehicle ? 'Сохранение...' : 'Сохранить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

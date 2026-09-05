@@ -217,23 +217,18 @@ function validateCoordinates(latVal, lonVal, pointName) {
 }
 
 /**
- * Расчет динамической стоимости поездки при разделении цены (Split Fare)
- * Формула: current_price = Math.ceil(price / Math.max(passenger_ids.length, 1))
- * @param {number} price - Базовая стоимость всей поездки
- * @param {Array<string>|number} passengerIds - Список идентификаторов пассажиров или их количество
- * @returns {number} Динамическая стоимость поездки с одного человека
+ * Расчет стоимости поездки (отмена Split Fare: строго фиксированная цена за 1 место)
+ * Базовая цена = текущая цена
+ * @param {number} price - Стоимость поездки за 1 место
+ * @returns {number} Фиксированная стоимость поездки
  */
-function calculateCurrentPrice(price, passengerIds = []) {
-    const count = Array.isArray(passengerIds)
-        ? passengerIds.length
-        : (Number(passengerIds) || 0);
-    const divisor = Math.max(count, 1);
+function calculateCurrentPrice(price) {
     const numericPrice = Number(price) || 0;
-    return Math.ceil(numericPrice / divisor);
+    return numericPrice;
 }
 
 /**
- * Преобразование строки БД в стандартизированный объект поездки с поддержкой Split Fare
+ * Преобразование строки БД в стандартизированный объект поездки с фиксированной ценой
  * @param {object} row - Данные поездки из БД
  * @returns {object} Форматированный объект поездки
  */
@@ -244,13 +239,25 @@ function mapRideRow(row) {
         ? row.passenger_ids.map(String)
         : [];
     const basePrice = Number(row.base_price || 0);
-    const currentPrice = calculateCurrentPrice(basePrice, passengerIds);
+    const currentPrice = calculateCurrentPrice(basePrice);
+
+    let passengers = [];
+    if (Array.isArray(row.passengers)) {
+        passengers = row.passengers;
+    } else if (typeof row.passengers === 'string') {
+        try {
+            passengers = JSON.parse(row.passengers);
+        } catch {
+            passengers = [];
+        }
+    }
 
     return {
         id: row.id,
         driver_id: row.driver_id,
         vehicle_id: row.vehicle_id || null,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
+        driver_username: row.driver_username || null,
         driver_phone: row.driver_phone || null,
         driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
         driver_avatar_url: row.driver_avatar_url || null,
@@ -271,9 +278,12 @@ function mapRideRow(row) {
         currentPrice: currentPrice,
         passenger_ids: passengerIds,
         passengerIds: passengerIds,
+        passengers: passengers,
         total_seats: row.total_seats,
         available_seats: row.available_seats,
         status: row.status,
+        ride_type: row.ride_type || 'one_off',
+        regular_days: row.regular_days || null,
         created_at: row.created_at
     };
 }
@@ -354,6 +364,11 @@ async function createRide(req, res) {
             basePrice = calculateBasePrice(distanceKm, isPeak);
         }
 
+        const rideType = req.body.ride_type === 'regular' ? 'regular' : 'one_off';
+        const regularDays = rideType === 'regular'
+            ? (Array.isArray(req.body.regular_days) ? req.body.regular_days.join(',') : (typeof req.body.regular_days === 'string' ? req.body.regular_days.trim() : null))
+            : null;
+
         const insertQuery = `
             INSERT INTO rides (
                 driver_id,
@@ -364,7 +379,9 @@ async function createRide(req, res) {
                 base_price,
                 total_seats,
                 available_seats,
-                status
+                status,
+                ride_type,
+                regular_days
             ) VALUES (
                 $1,
                 $2,
@@ -374,7 +391,9 @@ async function createRide(req, res) {
                 $8,
                 $9,
                 $10,
-                'scheduled'
+                'scheduled',
+                $11,
+                $12
             )
             RETURNING 
                 id,
@@ -390,6 +409,8 @@ async function createRide(req, res) {
                 total_seats,
                 available_seats,
                 status,
+                ride_type,
+                regular_days,
                 created_at
         `;
 
@@ -403,7 +424,9 @@ async function createRide(req, res) {
             endCoords.lat,
             basePrice,
             totalSeats,
-            availableSeats
+            availableSeats,
+            rideType,
+            regularDays
         ]);
 
         await client.query('COMMIT');
@@ -417,7 +440,8 @@ async function createRide(req, res) {
             driver_phone: driverInfo.phone,
             driver_rating: driverInfo.rating,
             driver_avatar_url: driverInfo.avatar_url || null,
-            passenger_ids: []
+            passenger_ids: [],
+            passengers: []
         };
 
         const mappedRide = mapRideRow(combinedRow);
@@ -515,6 +539,8 @@ async function getRides(req, res) {
             r.total_seats,
             r.available_seats,
             r.status,
+            r.ride_type,
+            r.regular_days,
             r.created_at,
             COALESCE(
                 (
@@ -523,7 +549,25 @@ async function getRides(req, res) {
                     WHERE m.ride_id = r.id AND m.status = 'accepted'
                 ),
                 ARRAY[]::text[]
-            ) AS passenger_ids
+            ) AS passenger_ids,
+            COALESCE(
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', pu.id,
+                            'name', COALESCE(pu.first_name, pu.username),
+                            'username', pu.username,
+                            'telegram', pu.username,
+                            'phone', pu.phone,
+                            'avatar_url', pu.avatar_url
+                        )
+                    )
+                    FROM matches m
+                    JOIN users pu ON m.passenger_id = pu.id
+                    WHERE m.ride_id = r.id AND m.status = 'accepted'
+                ),
+                '[]'::json
+            ) AS passengers
         FROM rides r
         LEFT JOIN users u ON r.driver_id = u.id
         WHERE ${whereClause}
@@ -618,14 +662,28 @@ async function joinRide(req, res) {
         `;
         const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price]);
 
-        // Получение актуального списка пассажиров для расчета Split Fare
-        const passengersRes = await client.query(
-            "SELECT passenger_id FROM matches WHERE ride_id = $1 AND status = 'accepted'",
-            [rideId]
-        );
-        const passenger_ids = passengersRes.rows.map((r) => String(r.passenger_id));
+        // Получение актуального списка пассажиров
+        const passengersRes = await client.query(`
+            SELECT json_agg(
+                json_build_object(
+                    'id', pu.id,
+                    'name', COALESCE(pu.first_name, pu.username),
+                    'username', pu.username,
+                    'telegram', pu.username,
+                    'phone', pu.phone,
+                    'avatar_url', pu.avatar_url
+                )
+            ) as passengers,
+            array_agg(m.passenger_id::text) as passenger_ids
+            FROM matches m
+            JOIN users pu ON m.passenger_id = pu.id
+            WHERE m.ride_id = $1 AND m.status = 'accepted'
+        `, [rideId]);
+
+        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
+        const passengers = passengersRes.rows[0]?.passengers || [];
         const price = Number(ride.base_price);
-        const current_price = calculateCurrentPrice(price, passenger_ids);
+        const current_price = calculateCurrentPrice(price);
 
         await client.query('COMMIT');
 
@@ -634,7 +692,8 @@ async function joinRide(req, res) {
             match: matchRes.rows[0],
             available_seats: updateRideRes.rows[0].available_seats,
             current_price,
-            passenger_ids
+            passenger_ids,
+            passengers
         });
     } catch (err) {
         await client.query('ROLLBACK');
@@ -699,14 +758,28 @@ async function leaveRide(req, res) {
             [rideId]
         );
 
-        // Получение актуального списка пассажиров после отмены участия для пересчета Split Fare
-        const passengersRes = await client.query(
-            "SELECT passenger_id FROM matches WHERE ride_id = $1 AND status = 'accepted'",
-            [rideId]
-        );
-        const passenger_ids = passengersRes.rows.map((r) => String(r.passenger_id));
+        // Получение актуального списка пассажиров после отмены участия
+        const passengersRes = await client.query(`
+            SELECT json_agg(
+                json_build_object(
+                    'id', pu.id,
+                    'name', COALESCE(pu.first_name, pu.username),
+                    'username', pu.username,
+                    'telegram', pu.username,
+                    'phone', pu.phone,
+                    'avatar_url', pu.avatar_url
+                )
+            ) as passengers,
+            array_agg(m.passenger_id::text) as passenger_ids
+            FROM matches m
+            JOIN users pu ON m.passenger_id = pu.id
+            WHERE m.ride_id = $1 AND m.status = 'accepted'
+        `, [rideId]);
+
+        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
+        const passengers = passengersRes.rows[0]?.passengers || [];
         const price = Number(ride.base_price);
-        const current_price = calculateCurrentPrice(price, passenger_ids);
+        const current_price = calculateCurrentPrice(price);
 
         await client.query('COMMIT');
 
@@ -714,12 +787,361 @@ async function leaveRide(req, res) {
             message: 'Вы успешно отменили участие в поездке',
             available_seats: updateRideRes.rows[0]?.available_seats,
             current_price,
-            passenger_ids
+            passenger_ids,
+            passengers
         });
     } catch (err) {
         await client.query('ROLLBACK');
         console.error('Ошибка отмены поездки:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при выходе из поездки' });
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Редактирование поездки (только создатель)
+ * PATCH /api/rides/:id
+ */
+async function updateRide(req, res) {
+    const rideId = req.params.id;
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
+
+    const driverId = extractUserId(req);
+    if (!driverId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Проверяем существование поездки и права создателя
+        const checkQuery = `
+            SELECT r.*,
+                   ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+                   ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat
+            FROM rides r
+            WHERE r.id = $1 FOR UPDATE
+        `;
+        const checkRes = await client.query(checkQuery, [rideId]);
+        if (checkRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const driverRes = await client.query(
+            'SELECT username, first_name, last_name, phone, rating, avatar_url FROM users WHERE id = $1',
+            [driverId]
+        );
+        const driverInfo = driverRes.rows[0] || {};
+
+        const currentRide = checkRes.rows[0];
+        if (currentRide.driver_id !== driverId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Редактировать поездку может только её создатель' });
+        }
+
+        if (currentRide.status !== 'scheduled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Можно редактировать только активные (запланированные) поездки' });
+        }
+
+        // Текущее число пассажиров
+        const passengersCountRes = await client.query(
+            "SELECT COUNT(*)::int as count FROM matches WHERE ride_id = $1 AND status = 'accepted'",
+            [rideId]
+        );
+        const currentPassengersCount = passengersCountRes.rows[0]?.count || 0;
+
+        // Валидация и обновление полей
+        let startLon = currentRide.start_lon;
+        let startLat = currentRide.start_lat;
+        let endLon = currentRide.end_lon;
+        let endLat = currentRide.end_lat;
+        let coordsChanged = false;
+
+        const rawStart = req.body.start_point || req.body.from || (
+            req.body.start_lat !== undefined && req.body.start_lon !== undefined
+                ? { lat: req.body.start_lat, lon: req.body.start_lon }
+                : null
+        );
+        if (rawStart) {
+            const resolvedStart = resolvePointCoordinates(rawStart, { lon: startLon, lat: startLat });
+            startLon = resolvedStart.lon;
+            startLat = resolvedStart.lat;
+            coordsChanged = true;
+        }
+
+        const rawEnd = req.body.end_point || req.body.to || (
+            req.body.end_lat !== undefined && req.body.end_lon !== undefined
+                ? { lat: req.body.end_lat, lon: req.body.end_lon }
+                : null
+        );
+        if (rawEnd) {
+            const resolvedEnd = resolvePointCoordinates(rawEnd, { lon: endLon, lat: endLat });
+            endLon = resolvedEnd.lon;
+            endLat = resolvedEnd.lat;
+            coordsChanged = true;
+        }
+
+        let departureTime = currentRide.departure_time;
+        if (req.body.departure_time || req.body.time) {
+            departureTime = parseDepartureTime(req.body.departure_time || req.body.time);
+        }
+
+        let vehicleId = currentRide.vehicle_id;
+        if (req.body.vehicle_id !== undefined) {
+            if (req.body.vehicle_id === null || req.body.vehicle_id === '') {
+                vehicleId = null;
+            } else {
+                if (!isValidUuid(req.body.vehicle_id)) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'Некорректный формат vehicle_id' });
+                }
+                const vCheck = await client.query('SELECT id FROM vehicles WHERE id = $1 AND driver_id = $2', [req.body.vehicle_id, driverId]);
+                if (vCheck.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ error: 'Указанный автомобиль не найден или не принадлежит водителю' });
+                }
+                vehicleId = req.body.vehicle_id;
+            }
+        }
+
+        let totalSeats = currentRide.total_seats;
+        if (req.body.total_seats !== undefined) {
+            const parsedSeats = parseInt(req.body.total_seats, 10);
+            if (isNaN(parsedSeats) || parsedSeats < 1 || parsedSeats > 8) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Количество мест должно быть от 1 до 8' });
+            }
+            if (parsedSeats < currentPassengersCount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({
+                    error: `Количество мест (${parsedSeats}) не может быть меньше числа уже записавшихся пассажиров (${currentPassengersCount})`
+                });
+            }
+            totalSeats = parsedSeats;
+        }
+        const availableSeats = totalSeats - currentPassengersCount;
+
+        let basePrice = currentRide.base_price;
+        const hasCustomPrice = (req.body.base_price !== undefined && req.body.base_price !== null && String(req.body.base_price).trim() !== '') ||
+                               (req.body.price !== undefined && req.body.price !== null && String(req.body.price).trim() !== '');
+        if (hasCustomPrice) {
+            const rawVal = req.body.base_price !== undefined ? req.body.base_price : req.body.price;
+            const parsedVal = parseFloat(rawVal);
+            if (isNaN(parsedVal) || parsedVal < 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Указана некорректная стоимость поездки' });
+            }
+            basePrice = Math.round(parsedVal * 100) / 100;
+        } else if (coordsChanged) {
+            const distanceKm = await calculateDistanceKm(client, startLon, startLat, endLon, endLat);
+            const isPeak = isPeakHour(departureTime);
+            basePrice = calculateBasePrice(distanceKm, isPeak);
+        }
+
+        let rideType = currentRide.ride_type || 'one_off';
+        if (req.body.ride_type !== undefined) {
+            rideType = req.body.ride_type === 'regular' ? 'regular' : 'one_off';
+        }
+
+        let regularDays = currentRide.regular_days;
+        if (req.body.regular_days !== undefined) {
+            regularDays = rideType === 'regular'
+                ? (Array.isArray(req.body.regular_days) ? req.body.regular_days.join(',') : (typeof req.body.regular_days === 'string' ? req.body.regular_days.trim() : null))
+                : null;
+        }
+
+        const updateQuery = `
+            UPDATE rides
+            SET
+                departure_time = $1,
+                start_point = ST_SetSRID(ST_MakePoint($2, $3), 4326),
+                end_point = ST_SetSRID(ST_MakePoint($4, $5), 4326),
+                base_price = $6,
+                total_seats = $7,
+                available_seats = $8,
+                vehicle_id = $9,
+                ride_type = $10,
+                regular_days = $11
+            WHERE id = $12
+            RETURNING 
+                id,
+                driver_id,
+                vehicle_id,
+                departure_time,
+                ST_X(start_point) as start_lon,
+                ST_Y(start_point) as start_lat,
+                ST_X(end_point) as end_lon,
+                ST_Y(end_point) as end_lat,
+                ROUND((ST_DistanceSphere(start_point, end_point) / 1000.0)::numeric, 2) as distance_km,
+                base_price,
+                total_seats,
+                available_seats,
+                status,
+                ride_type,
+                regular_days,
+                created_at
+        `;
+
+        const updateRes = await client.query(updateQuery, [
+            departureTime,
+            startLon,
+            startLat,
+            endLon,
+            endLat,
+            basePrice,
+            totalSeats,
+            availableSeats,
+            vehicleId,
+            rideType,
+            regularDays,
+            rideId
+        ]);
+
+        // Получаем актуальный список пассажиров
+        const passengersRes = await client.query(`
+            SELECT json_agg(
+                json_build_object(
+                    'id', pu.id,
+                    'name', COALESCE(pu.first_name, pu.username),
+                    'username', pu.username,
+                    'telegram', pu.username,
+                    'phone', pu.phone,
+                    'avatar_url', pu.avatar_url
+                )
+            ) as passengers,
+            array_agg(m.passenger_id::text) as passenger_ids
+            FROM matches m
+            JOIN users pu ON m.passenger_id = pu.id
+            WHERE m.ride_id = $1 AND m.status = 'accepted'
+        `, [rideId]);
+
+        await client.query('COMMIT');
+
+        const combinedRow = {
+            ...updateRes.rows[0],
+            driver_username: driverInfo.username,
+            driver_first_name: driverInfo.first_name,
+            driver_last_name: driverInfo.last_name,
+            driver_phone: driverInfo.phone,
+            driver_rating: driverInfo.rating,
+            driver_avatar_url: driverInfo.avatar_url || null,
+            passenger_ids: passengersRes.rows[0]?.passenger_ids || [],
+            passengers: passengersRes.rows[0]?.passengers || []
+        };
+
+        const mappedRide = mapRideRow(combinedRow);
+
+        return res.json({
+            message: 'Поездка успешно обновлена',
+            ride: mappedRide
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка обновления поездки:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при обновлении поездки' });
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Исключение (кик) пассажира водителем
+ * DELETE /api/rides/:id/passengers/:passengerId
+ */
+async function kickPassenger(req, res) {
+    const { id: rideId, passengerId } = req.params;
+
+    if (!isValidUuid(rideId) || !isValidUuid(passengerId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора (UUID)' });
+    }
+
+    const driverId = extractUserId(req);
+    if (!driverId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Проверяем поездку и права водителя
+        const rideCheck = await client.query(
+            'SELECT id, driver_id, status, available_seats, total_seats, base_price FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
+        if (rideCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const ride = rideCheck.rows[0];
+        if (ride.driver_id !== driverId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Только водитель может исключать пассажиров из поездки' });
+        }
+
+        if (ride.status !== 'scheduled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Исключать пассажиров можно только из запланированной поездки' });
+        }
+
+        // Проверяем наличие бронирования
+        const deleteRes = await client.query(
+            "DELETE FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = 'accepted' RETURNING id",
+            [rideId, passengerId]
+        );
+
+        if (deleteRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Пассажир не найден среди участников этой поездки' });
+        }
+
+        // Увеличиваем доступные места
+        const updateRideRes = await client.query(
+            'UPDATE rides SET available_seats = LEAST(total_seats, available_seats + 1) WHERE id = $1 RETURNING available_seats',
+            [rideId]
+        );
+
+        // Получаем оставшихся пассажиров
+        const passengersRes = await client.query(`
+            SELECT json_agg(
+                json_build_object(
+                    'id', pu.id,
+                    'name', COALESCE(pu.first_name, pu.username),
+                    'username', pu.username,
+                    'telegram', pu.username,
+                    'phone', pu.phone,
+                    'avatar_url', pu.avatar_url
+                )
+            ) as passengers,
+            array_agg(m.passenger_id::text) as passenger_ids
+            FROM matches m
+            JOIN users pu ON m.passenger_id = pu.id
+            WHERE m.ride_id = $1 AND m.status = 'accepted'
+        `, [rideId]);
+
+        await client.query('COMMIT');
+
+        const remainingPassengerIds = passengersRes.rows[0]?.passenger_ids || [];
+        const remainingPassengers = passengersRes.rows[0]?.passengers || [];
+
+        return res.json({
+            message: 'Пассажир успешно исключен из поездки',
+            available_seats: updateRideRes.rows[0]?.available_seats,
+            current_price: Number(ride.base_price),
+            passenger_ids: remainingPassengerIds,
+            passengers: remainingPassengers
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка исключения пассажира:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при исключении пассажира' });
     } finally {
         client.release();
     }
@@ -731,6 +1153,8 @@ module.exports = {
     getAllRides,
     joinRide,
     leaveRide,
+    updateRide,
+    kickPassenger,
     calculateCurrentPrice,
     isPeakHour,
     calculateDistanceKm,

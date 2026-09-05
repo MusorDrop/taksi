@@ -10,4 +10,7 @@ router.post('/', authenticateToken, vehicleController.createVehicle);
 // Получение списка автомобилей текущего пользователя
 router.get('/', authenticateToken, vehicleController.getVehicles);
 
+// Редактирование автомобиля водителя
+router.patch('/:id', authenticateToken, vehicleController.updateVehicle);
+
 module.exports = router;

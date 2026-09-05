@@ -17,6 +17,7 @@ import Rating from '@mui/material/Rating';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
+import Paper from '@mui/material/Paper';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -24,9 +25,15 @@ import EventIcon from '@mui/icons-material/Event';
 import BoltIcon from '@mui/icons-material/Bolt';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
+import PhoneIcon from '@mui/icons-material/Phone';
+import EditIcon from '@mui/icons-material/Edit';
+import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
+import RepeatIcon from '@mui/icons-material/Repeat';
+import GroupIcon from '@mui/icons-material/Group';
 import type { Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
 import { api } from '../api';
+import { useApp } from '../AppContext';
 
 interface RideCardProps {
   ride: Ride;
@@ -37,6 +44,7 @@ interface RideCardProps {
 }
 
 export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
+  const { kickPassenger, updateRide } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [rating, setRating] = useState<number>(5);
@@ -44,6 +52,20 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [isReviewed, setIsReviewed] = useState<boolean>(false);
+
+  // Исключение пассажира водителем
+  const [kickingPassengerId, setKickingPassengerId] = useState<string | null>(null);
+  const [kickError, setKickError] = useState<string | null>(null);
+
+  // Редактирование маршрута водителем
+  const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
+  const [editFrom, setEditFrom] = useState<string>(ride.from);
+  const [editTo, setEditTo] = useState<string>(ride.to);
+  const [editTime, setEditTime] = useState<string>(ride.time);
+  const [editPrice, setEditPrice] = useState<string>(String(ride.price));
+  const [editSeats, setEditSeats] = useState<string>(String(ride.totalSeats || 4));
+  const [isUpdatingRide, setIsUpdatingRide] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isCompleted = ride.status === 'completed';
 
@@ -70,6 +92,46 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     }
   };
 
+  const handleKickPassenger = async (passengerId: string): Promise<void> => {
+    setKickingPassengerId(passengerId);
+    setKickError(null);
+    try {
+      await kickPassenger(ride.id, passengerId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось исключить пассажира';
+      setKickError(message);
+    } finally {
+      setKickingPassengerId(null);
+    }
+  };
+
+  const handleSaveRide = async (): Promise<void> => {
+    const numPrice = Number(editPrice);
+    const numSeats = Number(editSeats);
+    if (!editFrom.trim() || !editTo.trim() || !editTime.trim() || !numPrice || !numSeats) {
+      setEditError('Заполните все обязательные поля');
+      return;
+    }
+    setIsUpdatingRide(true);
+    setEditError(null);
+    try {
+      await updateRide(ride.id, {
+        from: editFrom.trim(),
+        to: editTo.trim(),
+        time: editTime.trim(),
+        price: numPrice,
+        seats: numSeats,
+        total_seats: numSeats,
+      });
+      setEditDialogOpen(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось обновить маршрут';
+      setEditError(message);
+    } finally {
+      setIsUpdatingRide(false);
+    }
+  };
+
   const initials = ride.driverName
     .split(' ')
     .map((n) => n[0])
@@ -77,14 +139,9 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     .toUpperCase()
     .slice(0, 2);
 
-  const passengerCount = (Array.isArray(ride.passengerIds) && ride.passengerIds.length > 0)
-    ? ride.passengerIds.length
-    : (ride.totalSeats !== undefined && ride.availableSeats !== undefined
-        ? Math.max(0, ride.totalSeats - ride.availableSeats)
-        : (isPassenger ? 1 : 0));
-  const hasMultiplePassengers = passengerCount > 1 || ride.currentPrice < ride.price;
-
   const avatarUrl = formatAvatarUrl(ride.driverAvatarUrl);
+  const isRegular = ride.rideType === 'regular' || ride.ride_type === 'regular';
+  const regularLabel = ride.regularDays || ride.regular_days || 'Регулярная';
 
   return (
     <Card
@@ -118,10 +175,10 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           </Box>
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="h6" color="primary.main" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {ride.currentPrice} ₽{hasMultiplePassengers ? ' с человека' : ''}
+              {ride.price} ₽
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.72rem', lineHeight: 1.2, mt: 0.3 }}>
-              Общая сумма: {ride.price} ₽. Раздели цену с попутчиками!
+              за место • {ride.availableSeats ?? 0} мест
             </Typography>
           </Box>
           <IconButton
@@ -165,6 +222,16 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             variant="outlined"
             sx={{ maxWidth: '100%' }}
           />
+          {isRegular && (
+            <Chip
+              size="small"
+              icon={<RepeatIcon sx={{ fontSize: 14 }} />}
+              label={regularLabel}
+              color="secondary"
+              variant="outlined"
+              sx={{ fontWeight: 500 }}
+            />
+          )}
           {ride.isPeak && (
             <Chip
               size="small"
@@ -191,9 +258,109 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
         <Box sx={{ p: 2, pt: 0 }}>
           <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
             {isDriver ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Это ваш маршрут. Пассажиры, которые присоединятся, свяжутся с вами через Telegram.
-              </Typography>
+              <Box sx={{ mb: 2 }}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{ fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                >
+                  <GroupIcon sx={{ fontSize: 18 }} />
+                  Попутчики ({ride.passengers?.length || 0}):
+                </Typography>
+                {kickError && (
+                  <Alert severity="error" sx={{ mb: 1 }} onClose={() => setKickError(null)}>
+                    {kickError}
+                  </Alert>
+                )}
+                {ride.passengers && ride.passengers.length > 0 ? (
+                  <Stack spacing={1}>
+                    {ride.passengers.map((p) => (
+                      <Paper
+                        key={p.id}
+                        variant="outlined"
+                        sx={{
+                          p: 1.2,
+                          borderRadius: 2,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                        }}
+                      >
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Avatar
+                            src={formatAvatarUrl(p.avatar_url)}
+                            sx={{ width: 32, height: 32, fontSize: 13, bgcolor: 'primary.light' }}
+                          >
+                            {(p.name || p.username || 'П')[0].toUpperCase()}
+                          </Avatar>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                              {p.name || p.username || 'Попутчик'}
+                            </Typography>
+                            {p.telegram && (
+                              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                                @{p.telegram.replace('@', '')}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Stack>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          {p.phone && (
+                            <IconButton
+                              component="a"
+                              href={`tel:${p.phone}`}
+                              size="small"
+                              color="primary"
+                              title={`Позвонить: ${p.phone}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <PhoneIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          )}
+                          {p.telegram && (
+                            <IconButton
+                              component="a"
+                              href={`https://t.me/${p.telegram.replace('@', '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              size="small"
+                              color="primary"
+                              title="Telegram"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <SendIcon sx={{ fontSize: 18 }} />
+                            </IconButton>
+                          )}
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            disabled={kickingPassengerId === p.id}
+                            startIcon={
+                              kickingPassengerId === p.id ? (
+                                <CircularProgress size={14} color="inherit" />
+                              ) : (
+                                <PersonRemoveIcon sx={{ fontSize: 16 }} />
+                              )
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleKickPassenger(p.id);
+                            }}
+                            sx={{ textTransform: 'none', py: 0.3, px: 1, minWidth: 'auto', fontSize: '0.75rem' }}
+                          >
+                            Исключить
+                          </Button>
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', mb: 1 }}>
+                    Попутчиков пока нет
+                  </Typography>
+                )}
+              </Box>
             ) : (
               <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
                 <Avatar
@@ -214,7 +381,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               </Stack>
             )}
 
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {isCompleted && !isDriver && (
                 <Button
                   fullWidth
@@ -231,19 +398,53 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   {isReviewed ? 'Отзыв оставлен ✓' : 'Оставить отзыв'}
                 </Button>
               )}
-              {!isDriver && (
+              {isDriver && (
                 <Button
                   fullWidth
-                  variant={isCompleted ? 'outlined' : 'contained'}
+                  variant="outlined"
                   size="small"
-                  startIcon={<SendIcon />}
-                  href={`https://t.me/${ride.telegram}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
+                  startIcon={<EditIcon />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditFrom(ride.from);
+                    setEditTo(ride.to);
+                    setEditTime(ride.time);
+                    setEditPrice(String(ride.price));
+                    setEditSeats(String(ride.totalSeats || 4));
+                    setEditDialogOpen(true);
+                  }}
                 >
-                  Написать в Telegram
+                  Редактировать маршрут
                 </Button>
+              )}
+              {!isDriver && (
+                <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
+                  <Button
+                    fullWidth
+                    variant={isCompleted ? 'outlined' : 'contained'}
+                    size="small"
+                    startIcon={<SendIcon />}
+                    href={`https://t.me/${ride.telegram}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Написать в Telegram
+                  </Button>
+                  {ride.driverPhone && (
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      size="small"
+                      startIcon={<PhoneIcon />}
+                      component="a"
+                      href={`tel:${ride.driverPhone}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Позвонить
+                    </Button>
+                  )}
+                </Stack>
               )}
               {!isDriver && isPassenger && onLeave && !isCompleted && (
                 <Button
@@ -276,6 +477,72 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           </Box>
         </Box>
       </Collapse>
+
+      {/* Модальное окно редактирования поездки */}
+      <Dialog
+        open={editDialogOpen}
+        onClose={() => !isUpdatingRide && setEditDialogOpen(false)}
+        onClick={(e) => e.stopPropagation()}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Редактировать маршрут</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {editError && (
+              <Alert severity="error" onClose={() => setEditError(null)}>
+                {editError}
+              </Alert>
+            )}
+            <TextField
+              fullWidth
+              label="Откуда"
+              value={editFrom}
+              onChange={(e) => setEditFrom(e.target.value)}
+            />
+            <TextField
+              fullWidth
+              label="Куда"
+              value={editTo}
+              onChange={(e) => setEditTo(e.target.value)}
+            />
+            <TextField
+              fullWidth
+              label="Время выезда"
+              type="time"
+              value={editTime}
+              onChange={(e) => setEditTime(e.target.value)}
+            />
+            <TextField
+              fullWidth
+              label="Цена за место (₽)"
+              type="number"
+              value={editPrice}
+              onChange={(e) => setEditPrice(e.target.value)}
+            />
+            <TextField
+              fullWidth
+              label="Всего мест"
+              type="number"
+              value={editSeats}
+              onChange={(e) => setEditSeats(e.target.value)}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditDialogOpen(false)} disabled={isUpdatingRide} color="inherit">
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveRide}
+            disabled={isUpdatingRide}
+            startIcon={isUpdatingRide ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {isUpdatingRide ? 'Сохранение...' : 'Сохранить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Модальное окно создания отзыва */}
       <Dialog
