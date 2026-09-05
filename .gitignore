@@ -1,0 +1,38 @@
+# Antigravity Agent Scratch & Cache
+scratch/
+.repomix-output.*
+.artifacts/
+
+# Antigravity Project Scaffolding
+.agents/
+GEMINI.md
+repomix.config.json
+.repomixignore
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node
+node_modules/
+npm-debug.log*
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
