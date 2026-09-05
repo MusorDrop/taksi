@@ -69,3 +69,73 @@ export function formatDays(days: DayKey[]): string {
 export function formatPrice(price: number): string {
   return `${price.toFixed(0)} ₽`;
 }
+
+/**
+ * Определение читаемого названия локации по координатам
+ * @param lon - Долгота
+ * @param lat - Широта
+ * @param fallbackName - Название по умолчанию
+ */
+export function resolveCoordsToName(lon?: number, lat?: number, fallbackName: string = 'Локация'): string {
+  if (lon === undefined || lat === undefined || isNaN(lon) || isNaN(lat)) {
+    return fallbackName;
+  }
+
+  const KNOWN_POINTS: Array<{ name: string; lon: number; lat: number }> = [
+    { name: 'Уралмаш', lon: 60.5975, lat: 56.8885 },
+    { name: 'Кампус Новокольцовский', lon: 60.7712, lat: 56.7686 },
+    { name: 'Центр', lon: 60.6057, lat: 56.8389 },
+    { name: 'Главный корпус УрФУ', lon: 60.6534, lat: 56.8439 },
+    { name: 'Втузгородок', lon: 60.6530, lat: 56.8430 },
+    { name: 'Академический', lon: 60.5186, lat: 56.7865 },
+    { name: 'ЖБИ', lon: 60.6860, lat: 56.8285 },
+  ];
+
+  for (const point of KNOWN_POINTS) {
+    const dLon = point.lon - lon;
+    const dLat = point.lat - lat;
+    const distSquared = dLon * dLon + dLat * dLat;
+    if (distSquared < 0.005) {
+      return point.name;
+    }
+  }
+
+  return fallbackName;
+}
+
+/**
+ * Преобразование модели поездки с бэкенда в формат интерфейса фронтенда
+ * @param backendRide - Модель поездки из ответа API
+ */
+export function mapBackendRideToRide(backendRide: import('./types').BackendRide): import('./types').Ride {
+  const departureDate = new Date(backendRide.departure_time);
+  const isValidDate = !isNaN(departureDate.getTime());
+
+  const hours = isValidDate ? String(departureDate.getHours()).padStart(2, '0') : '08';
+  const minutes = isValidDate ? String(departureDate.getMinutes()).padStart(2, '0') : '00';
+  const time = `${hours}:${minutes}`;
+
+  const dayIndex = isValidDate ? departureDate.getDay() : 1;
+  const dayKeys: import('./types').DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const day = dayKeys[dayIndex] || 'Mon';
+
+  return {
+    id: backendRide.id,
+    driverId: backendRide.driver_id,
+    driverName: backendRide.driver_name || 'Водитель',
+    from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
+    to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
+    days: [day],
+    time,
+    telegram: backendRide.driver_phone
+      ? backendRide.driver_phone.replace('+', '')
+      : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'),
+    price: Number(backendRide.base_price || 0),
+    distanceKm: Number(backendRide.distance_km ?? backendRide.distanceKm ?? 5.0),
+    isPeak: Boolean(backendRide.is_peak ?? backendRide.isPeak),
+    createdAt: backendRide.created_at ? new Date(backendRide.created_at).getTime() : Date.now(),
+    availableSeats: backendRide.available_seats,
+    totalSeats: backendRide.total_seats,
+  };
+}
+

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -8,22 +8,53 @@ import InputAdornment from '@mui/material/InputAdornment';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
+import Alert from '@mui/material/Alert';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
 
 export default function FindRidesScreen() {
-  const { rides, passengerRideIds, joinRide, leaveRide } = useApp();
-  const [query, setQuery] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiQuery, setAiQuery] = useState('');
+  const { rides, passengerRideIds, joinRide, leaveRide, isRidesLoading, ridesError, fetchRides } = useApp();
+  const [query, setQuery] = useState<string>('');
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiQuery, setAiQuery] = useState<string>('');
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
-  const [filterDest, setFilterDest] = useState('');
+  const [filterDest, setFilterDest] = useState<string>('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const handleAiSearch = () => {
+  // Запрос списка поездок с сервера с отменой через AbortController
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    async function loadRidesData(): Promise<void> {
+      setFetchError(null);
+      try {
+        await fetchRides(controller.signal);
+      } catch (err: unknown) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : 'Ошибка при загрузке поездок';
+        if (isMounted) {
+          setFetchError(message);
+        }
+      }
+    }
+
+    loadRidesData();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [fetchRides]);
+
+  const handleAiSearch = (): void => {
     if (!aiQuery.trim()) return;
     setAiLoading(true);
     setTimeout(() => {
@@ -107,9 +138,25 @@ export default function FindRidesScreen() {
 
   return (
     <Box sx={{ pb: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-        Найти поездку
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+          Найти поездку
+        </Typography>
+        <Button
+          size="small"
+          startIcon={<RefreshIcon />}
+          onClick={() => fetchRides()}
+          disabled={isRidesLoading}
+        >
+          Обновить
+        </Button>
+      </Stack>
+
+      {(ridesError || fetchError) && (
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+          {ridesError || fetchError}
+        </Alert>
+      )}
 
       {/* Quick AI Search */}
       <Paper
@@ -200,7 +247,15 @@ export default function FindRidesScreen() {
       </Box>
 
       {/* Results */}
-      {aiLoading ? (
+      {isRidesLoading ? (
+        <Stack spacing={2}>
+          {[0, 1, 2].map((i) => (
+            <Paper key={i} variant="outlined" sx={{ p: 2, borderRadius: 3, height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CircularProgress size={24} />
+            </Paper>
+          ))}
+        </Stack>
+      ) : aiLoading ? (
         <Stack spacing={2}>
           {[0, 1, 2].map((i) => (
             <Paper key={i} variant="outlined" sx={{ p: 2, borderRadius: 3, height: 100 }}>

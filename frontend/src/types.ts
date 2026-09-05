@@ -26,6 +26,8 @@ export interface User {
   id: string;
   name: string;
   telegram: string;
+  phone?: string;
+  role?: string;
 }
 
 export interface Ride {
@@ -41,6 +43,67 @@ export interface Ride {
   distanceKm: number;
   isPeak: boolean;
   createdAt: number;
+  availableSeats?: number;
+  totalSeats?: number;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
+
+/**
+ * Модель пользователя, возвращаемая сервером
+ */
+export interface BackendUser {
+  id: string;
+  username: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  role?: string;
+  rating?: number | null;
+  is_verified?: boolean;
+}
+
+/**
+ * Ответ сервера при авторизации или регистрации
+ */
+export interface AuthResponse {
+  message: string;
+  token: string;
+  user: BackendUser;
+}
+
+/**
+ * Модель поездки, возвращаемая сервером
+ */
+export interface BackendRide {
+  id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_phone?: string | null;
+  driver_rating?: number | null;
+  departure_time: string;
+  start_coords?: { lon: number; lat: number };
+  end_coords?: { lon: number; lat: number };
+  start_lon?: number;
+  start_lat?: number;
+  end_lon?: number;
+  end_lat?: number;
+  distance_km?: number;
+  distanceKm?: number;
+  is_peak?: boolean;
+  isPeak?: boolean;
+  base_price: number;
+  total_seats?: number;
+  available_seats?: number;
+  status?: string;
+  created_at?: string;
+}
+
+/**
+ * Ответ сервера со списком поездок
+ */
+export interface RidesResponse {
+  count: number;
+  rides: BackendRide[];
+}
+

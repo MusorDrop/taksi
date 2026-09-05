@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
+import CircularProgress from '@mui/material/CircularProgress';
 import GlobalStyles from '@mui/material/GlobalStyles';
 import theme from './theme';
 import { AppProvider, useApp } from './AppContext';
@@ -41,8 +42,24 @@ const globalStyles = (
 );
 
 function AppContent() {
-  const { user } = useApp();
+  const { user, isAuthLoading } = useApp();
   const [tab, setTab] = useState<TabKey>('find');
+
+  if (isAuthLoading) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: 'background.default',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   if (!user) {
     return <AuthScreen />;
