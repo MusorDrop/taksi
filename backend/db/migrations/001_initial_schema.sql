@@ -44,11 +44,10 @@ CREATE TABLE IF NOT EXISTS users (
 -- Таблица транспортных средств
 CREATE TABLE IF NOT EXISTS vehicles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    make_model VARCHAR(150) NOT NULL,
-    plate_number VARCHAR(20) NOT NULL,
+    driver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    brand VARCHAR(150) NOT NULL,
     color VARCHAR(50),
-    capacity INTEGER NOT NULL DEFAULT 4,
+    license_plate VARCHAR(20) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

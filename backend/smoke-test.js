@@ -1,6 +1,4 @@
 process.env.NODE_ENV = 'test';
-const fs = require('fs');
-const path = require('path');
 const bcrypt = require('bcryptjs');
 const app = require('./index');
 const pool = require('./db');
@@ -10,20 +8,8 @@ const { JWT_SECRET } = require('./middleware/authMiddleware');
 // Реальный bcrypt-хэш тестового пароля
 const testPasswordHash = bcrypt.hashSync('smoketest12345678', 10);
 
-/**
- * Автоматическое применение миграции 002_vehicles.sql перед началом тестов
- */
-async function applyMigrations() {
-    const migrationPath = path.join(__dirname, 'db', 'migrations', '002_vehicles.sql');
-    if (fs.existsSync(migrationPath)) {
-        const sql = fs.readFileSync(migrationPath, 'utf8');
-        await pool.query(sql);
-    }
-}
-
 async function runSmokeTests() {
     console.log('=== ЗАПУСК SMOKE TEST (ДЫМОВОЕ ТЕСТИРОВАНИЕ) ===\n');
-    await applyMigrations();
     let hasErrors = false;
     const testResults = [];
     let createdDriverId = null;
