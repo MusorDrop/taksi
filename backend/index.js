@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const pool = require('./db');
 
 const app = express();
@@ -14,22 +13,6 @@ app.use(helmet());
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:5173' }));
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
-
-// Ограничение частоты запросов для аутентификации (максимум 5 запросов за 15 минут)
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    message: {
-        error: 'Слишком много попыток входа или регистрации. Пожалуйста, повторите попытку через 15 минут.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false
-});
-
-// Отключение rate limiter в тестовом окружении
-if (process.env.NODE_ENV !== 'test') {
-    app.use('/api/auth', authLimiter);
-}
 
 // Роуты API
 const authRoutes = require('./routes/authRoutes');
