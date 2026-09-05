@@ -28,6 +28,7 @@ export interface User {
   telegram: string;
   phone?: string;
   role?: string;
+  averageRating?: number | null;
 }
 
 export interface Ride {
@@ -47,6 +48,7 @@ export interface Ride {
   totalSeats?: number;
   vehicleId?: string | null;
   status?: string;
+  averageRating?: number | null;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -62,6 +64,7 @@ export interface BackendUser {
   phone?: string | null;
   role?: string;
   rating?: number | null;
+  average_rating?: number | string | null;
   is_verified?: boolean;
 }
 
@@ -84,6 +87,7 @@ export interface BackendRide {
   driver_name: string;
   driver_phone?: string | null;
   driver_rating?: number | null;
+  average_rating?: number | string | null;
   departure_time: string;
   start_coords?: { lon: number; lat: number };
   end_coords?: { lon: number; lat: number };

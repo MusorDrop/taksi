@@ -138,6 +138,7 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     totalSeats: backendRide.total_seats,
     vehicleId: backendRide.vehicle_id || null,
     status: backendRide.status || 'scheduled',
+    averageRating: backendRide.average_rating ? Number(backendRide.average_rating) : null,
   };
 }
 
