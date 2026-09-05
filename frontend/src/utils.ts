@@ -12,7 +12,7 @@ export const PEAK_EVENING_END = 19 * 60;
 // (e.g. the "Откуда"/"Куда" fields are still empty).
 export const AI_DEFAULT_BASE_PRICE = 150;
 // Simulated traffic/demand surge applied during peak windows.
-export const AI_PEAK_SURGE_MULTIPLIER = 1.35;
+export const AI_PEAK_SURGE_MULTIPLIER = 1.3;
 // Recommendations are rounded to a clean, human-friendly step.
 export const AI_PRICE_ROUNDING_STEP = 5;
 
@@ -43,7 +43,7 @@ function roundToStep(value: number, step: number): number {
 /**
  * AI smart price recommendation for drivers.
  *
- * - Base fare comes from the resolved route distance (12₽/km, split three ways).
+ * - Base fare comes from the resolved route distance (6₽/km).
  * - Falls back to a flat AI_DEFAULT_BASE_PRICE while the route hasn't resolved
  *   to a distance yet (e.g. "Откуда"/"Куда" not filled in).
  * - During simulated peak-hour traffic, a surge multiplier is applied.
@@ -51,7 +51,7 @@ function roundToStep(value: number, step: number): number {
  */
 export function getAiRecommendedPrice(distanceKm: number | null | undefined, time: string): number {
   const baseFare =
-    distanceKm && distanceKm > 0 ? (distanceKm * 12) / 3 : AI_DEFAULT_BASE_PRICE;
+    distanceKm && distanceKm > 0 ? distanceKm * 6 : AI_DEFAULT_BASE_PRICE;
   const withSurge = isPeakTime(time) ? baseFare * AI_PEAK_SURGE_MULTIPLIER : baseFare;
   return roundToStep(withSurge, AI_PRICE_ROUNDING_STEP);
 }
