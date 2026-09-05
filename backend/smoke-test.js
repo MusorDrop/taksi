@@ -272,6 +272,12 @@ async function runSmokeTests() {
                 { expiresIn: '1h' }
             );
 
+            // Добавляем пассажира в поездку, чтобы он являлся подтвержденным участником (требование 🟠-2)
+            await pool.query(`
+                INSERT INTO matches (ride_id, passenger_id, agreed_price, status)
+                VALUES ($1, $2, 100, 'accepted')
+            `, [createdRideId, createdPassengerId]);
+
             const reviewRes = await fetch(`${baseUrl}/api/reviews`, {
                 method: 'POST',
                 headers: {
@@ -396,7 +402,10 @@ async function runSmokeTests() {
         // Тест 10: Security - Защита API администратора (авторизация, timing-safe auth)
         console.log('\n--- Тест 10: Security - Проверка блокировки доступа к /api/admin без ключа и валидация origin ---');
         try {
-            const validAdminKey = process.env.ADMIN_SECRET || 'poputka_admin_secret_key_30chr';
+            const validAdminKey = process.env.ADMIN_SECRET;
+            if (!validAdminKey) {
+                throw new Error('Переменная окружения ADMIN_SECRET не установлена');
+            }
             const browserHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Sec-Fetch-Mode': 'cors',
@@ -443,7 +452,10 @@ async function runSmokeTests() {
         // Тест 11: Security - Защита админских маршрутов от некорректных UUID (400 вместо 500)
         console.log('\n--- Тест 11: Security - Защита параметров :id в adminRoutes (UUID валидация) ---');
         try {
-            const validAdminKey = process.env.ADMIN_SECRET || 'poputka_admin_secret_key_30chr';
+            const validAdminKey = process.env.ADMIN_SECRET;
+            if (!validAdminKey) {
+                throw new Error('Переменная окружения ADMIN_SECRET не установлена');
+            }
             const adminHeaders = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Sec-Fetch-Mode': 'cors',

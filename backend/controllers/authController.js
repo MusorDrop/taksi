@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
+const { isValidPhone } = require('../utils/validation');
 
 /**
  * Санитизация объекта пользователя для безопасного ответа клиенту
@@ -86,7 +87,13 @@ async function register(req, res) {
         });
     }
 
-    // Проверка пароля на пустоту и минимальную длину (не менее 8 символов)
+    if (trimmedUsername.length > 100) {
+        return res.status(400).json({
+            error: 'Имя пользователя не должно превышать 100 символов'
+        });
+    }
+
+    // Проверка пароля на пустоту и длину (от 8 до 128 символов)
     if (typeof password !== 'string' || password.length === 0) {
         return res.status(400).json({
             error: 'Пароль не может быть пустым'
@@ -99,10 +106,35 @@ async function register(req, res) {
         });
     }
 
-    // Проверка обязательного номера телефона при регистрации
+    if (password.length > 128) {
+        return res.status(400).json({
+            error: 'Пароль не должен превышать 128 символов'
+        });
+    }
+
+    // Проверка обязательного номера телефона и его формата при регистрации
     if (!phone || typeof phone !== 'string' || phone.trim().length === 0) {
         return res.status(400).json({
             error: 'Поле phone (номер телефона) обязательно для регистрации'
+        });
+    }
+
+    if (!isValidPhone(phone)) {
+        return res.status(400).json({
+            error: 'Некорректный формат номера телефона. Ожидается от 10 до 15 цифр (например, +79991234567)'
+        });
+    }
+
+    // Проверка длины дополнительных полей (имя и фамилия)
+    if (first_name && typeof first_name === 'string' && first_name.trim().length > 100) {
+        return res.status(400).json({
+            error: 'Имя не должно превышать 100 символов'
+        });
+    }
+
+    if (last_name && typeof last_name === 'string' && last_name.trim().length > 100) {
+        return res.status(400).json({
+            error: 'Фамилия не должна превышать 100 символов'
         });
     }
 
@@ -308,6 +340,9 @@ async function updateProfile(req, res) {
             return res.status(400).json({ error: 'Telegram / имя пользователя не может быть пустым' });
         }
         newTg = rawTg.replace(/^@/, '').trim();
+        if (newTg.length > 100) {
+            return res.status(400).json({ error: 'Telegram / имя пользователя не должно превышать 100 символов' });
+        }
     }
 
     let newPhone = null;
@@ -316,14 +351,24 @@ async function updateProfile(req, res) {
             return res.status(400).json({ error: 'Номер телефона не может быть пустым' });
         }
         newPhone = phone.trim();
+        if (!isValidPhone(newPhone)) {
+            return res.status(400).json({ error: 'Некорректный формат номера телефона. Ожидается от 10 до 15 цифр' });
+        }
         if (newPhone.length > 20) {
             return res.status(400).json({ error: 'Номер телефона не должен превышать 20 символов' });
         }
     }
 
-    const newFirstName = typeof first_name === 'string' && first_name.trim().length > 0
-        ? first_name.trim()
-        : null;
+    let newFirstName = null;
+    if (first_name !== undefined) {
+        if (typeof first_name !== 'string' || first_name.trim().length === 0) {
+            return res.status(400).json({ error: 'Имя не может быть пустым' });
+        }
+        newFirstName = first_name.trim();
+        if (newFirstName.length > 100) {
+            return res.status(400).json({ error: 'Имя не должно превышать 100 символов' });
+        }
+    }
 
     if (newTg === null && newPhone === null && newFirstName === null) {
         return res.status(400).json({ error: 'Необходимо указать хотя бы одно поле для обновления (phone или telegram)' });
