@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const pool = require('./db');
 
 const app = express();
@@ -14,10 +15,27 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localh
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
 
+// Ограничение частоты запросов для аутентификации (максимум 5 запросов за 15 минут)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: {
+        error: 'Слишком много попыток входа или регистрации. Пожалуйста, повторите попытку через 15 минут.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Отключение rate limiter в тестовом окружении
+if (process.env.NODE_ENV !== 'test') {
+    app.use('/api/auth', authLimiter);
+}
+
 // Роуты API
 const authRoutes = require('./routes/authRoutes');
 const rideRoutes = require('./routes/rideRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
 
 // Базовый роут проверки здоровья сервера
 app.get('/api/health', async (req, res) => {
@@ -33,6 +51,18 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/vehicles', vehicleRoutes);
+
+// Fallback для несуществующих маршрутов (404)
+app.use((req, res) => {
+    res.status(404).json({ error: 'Маршрут не найден' });
+});
+
+// Глобальный обработчик ошибок (500)
+app.use((err, req, res, next) => {
+    console.error('Необработанная ошибка сервера:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+});
 
 // Запуск сервера
 if (require.main === module) {
@@ -42,4 +72,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-
