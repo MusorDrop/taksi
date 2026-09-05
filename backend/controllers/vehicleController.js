@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { isValidUuid } = require('../utils/validation');
 
 /**
  * Валидация входных данных для создания автомобиля
@@ -123,8 +124,7 @@ async function updateVehicle(req, res) {
     }
 
     const { id } = req.params;
-    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!UUID_REGEX.test(id)) {
+    if (!isValidUuid(id)) {
         return res.status(400).json({ error: 'Некорректный формат идентификатора автомобиля (UUID)' });
     }
 

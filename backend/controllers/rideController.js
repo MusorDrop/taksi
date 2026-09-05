@@ -307,6 +307,10 @@ async function createRide(req, res) {
     }
 
     const departureTime = parseDepartureTime(req.body.departure_time || req.body.time);
+    // 🔵-7: Валидация даты отправления (поездка не может быть запланирована в прошлом)
+    if (departureTime.getTime() < Date.now() - 60000) {
+        return res.status(400).json({ error: 'Время отправления не может быть в прошлом' });
+    }
     const totalSeats = Math.min(8, Math.max(1, parseInt(req.body.total_seats || 4, 10)));
     const availableSeats = Math.min(totalSeats, Math.max(0, parseInt(req.body.available_seats !== undefined ? req.body.available_seats : totalSeats, 10)));
 
@@ -1141,10 +1145,144 @@ async function kickPassenger(req, res) {
     }
 }
 
+
+/**
+ * Получение детальной информации о конкретной поездке по её идентификатору (🔵-9)
+ * GET /api/rides/:id
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ */
+async function getRideById(req, res) {
+    const { id } = req.params;
+    if (!isValidUuid(id)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
+
+    try {
+        const query = `
+            SELECT 
+                r.id,
+                r.driver_id,
+                r.vehicle_id,
+                r.departure_time,
+                ST_X(r.start_point) AS start_lon,
+                ST_Y(r.start_point) AS start_lat,
+                ST_X(r.end_point) AS end_lon,
+                ST_Y(r.end_point) AS end_lat,
+                r.total_seats,
+                r.available_seats,
+                r.status,
+                r.base_price,
+                r.ride_type,
+                r.regular_days,
+                r.created_at,
+                COALESCE(
+                    (
+                        SELECT array_agg(m.passenger_id::text)
+                        FROM matches m
+                        WHERE m.ride_id = r.id AND m.status = 'accepted'
+                    ),
+                    ARRAY[]::text[]
+                ) as passenger_ids,
+                COALESCE(
+                    (
+                        SELECT json_agg(
+                            json_build_object(
+                                'id', pu.id,
+                                'name', COALESCE(pu.first_name, pu.username),
+                                'username', pu.username,
+                                'phone', pu.phone,
+                                'avatar_url', pu.avatar_url,
+                                'selected_day', m.selected_day
+                            )
+                        )
+                        FROM matches m
+                        JOIN users pu ON m.passenger_id = pu.id
+                        WHERE m.ride_id = r.id AND m.status = 'accepted'
+                    ),
+                    '[]'::json
+                ) as passengers,
+                u.username AS driver_username,
+                u.first_name AS driver_first_name,
+                u.last_name AS driver_last_name,
+                u.phone AS driver_phone,
+                u.rating AS driver_rating,
+                u.avatar_url AS driver_avatar_url,
+                v.brand AS vehicle_brand,
+                v.color AS vehicle_color,
+                v.license_plate AS vehicle_license_plate,
+                v.seats AS vehicle_seats
+            FROM rides r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN vehicles v ON r.vehicle_id = v.id
+            WHERE r.id = $1
+        `;
+
+        const result = await pool.query(query, [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const ride = mapRideRow(result.rows[0]);
+        return res.json({ ride });
+    } catch (err) {
+        console.error('Ошибка получения поездки по ID:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении информации о поездке' });
+    }
+}
+
+/**
+ * Удаление или отмена поездки водителем (🟡-8)
+ * DELETE /api/rides/:id
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ */
+async function deleteRide(req, res) {
+    const driverId = extractUserId(req);
+    if (!driverId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const { id } = req.params;
+    if (!isValidUuid(id)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const rideRes = await client.query('SELECT id, driver_id, status FROM rides WHERE id = $1 FOR UPDATE', [id]);
+        if (rideRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const ride = rideRes.rows[0];
+        if (ride.driver_id !== driverId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Только водитель может отменить или удалить свою поездку' });
+        }
+
+        await client.query('DELETE FROM rides WHERE id = $1', [id]);
+        await client.query('COMMIT');
+
+        return res.json({ message: 'Поездка успешно удалена' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка удаления поездки:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при удалении поездки' });
+    } finally {
+        client.release();
+    }
+}
+
 module.exports = {
     createRide,
     getRides,
     getAllRides,
+    getRideById,
+    deleteRide,
     joinRide,
     leaveRide,
     updateRide,

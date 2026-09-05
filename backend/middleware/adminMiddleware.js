@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('./authMiddleware');
 
 /**
  * Регулярное выражение для выявления консольных утилит, ботов и HTTP-библиотек.
@@ -224,7 +226,24 @@ function adminMiddleware(req, res, next) {
         return res.status(keyValidation.status || 403).json({ error: keyValidation.error });
     }
 
+    // Если передан заголовок Authorization, верифицируем JWT для идентификации администратора и аудита
+    const authHeader = req.headers['authorization'];
+    if (authHeader) {
+        const token = authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Токен администратора отсутствует' });
+        }
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            req.adminUser = decoded;
+            req.user = decoded;
+        } catch {
+            return res.status(401).json({ error: 'Недействительный токен администратора' });
+        }
+    }
+
     return next();
 }
+
 
 module.exports = adminMiddleware;
