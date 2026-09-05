@@ -127,6 +127,10 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
                 bgcolor: 'white',
                 borderRadius: 2,
               },
+              '& .MuiOutlinedInput-input::placeholder': {
+                color: '#757575',
+                opacity: 1,
+              },
             }}
           />
           <Button

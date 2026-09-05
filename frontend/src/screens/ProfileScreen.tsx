@@ -10,6 +10,9 @@ import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -18,12 +21,14 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { useApp } from '../AppContext';
+import { useThemeMode } from '../ThemeModeContext';
 import { api } from '../api';
 import { formatAvatarUrl } from '../utils';
 import type { Vehicle, VehiclesResponse, BackendUser } from '../types';
 
 export default function ProfileScreen() {
   const { user, logout, rides, passengerRideIds, updateUser } = useApp();
+  const { mode, toggleTheme } = useThemeMode();
 
   // Состояния для загрузки аватарки
   const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
@@ -285,6 +290,19 @@ export default function ProfileScreen() {
       </Stack>
 
       <Divider sx={{ my: 3 }} />
+
+      {/* Секция: Переключение темы */}
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 3 }}>
+        <FormControlLabel
+          control={<Switch checked={mode === 'dark'} onChange={toggleTheme} />}
+          label={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <DarkModeIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+              <span>Тёмная тема</span>
+            </Stack>
+          }
+        />
+      </Paper>
 
       {/* Секция: Гараж автомобилей */}
       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>
