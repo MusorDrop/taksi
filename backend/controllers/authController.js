@@ -26,6 +26,8 @@ function formatUserProfile(user, averageRating = null) {
         rating: avg,
         average_rating: avg,
         is_verified: user.is_verified,
+        is_blocked: Boolean(user.is_blocked),
+        avatar_url: user.avatar_url || null,
         emergency_contact: user.emergency_contact,
         preferences: user.preferences,
         created_at: user.created_at
@@ -165,6 +167,10 @@ async function login(req, res) {
         }
 
         const user = result.rows[0];
+        if (user.is_blocked) {
+            return res.status(403).json({ error: 'Ваш аккаунт заблокирован администратором' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
@@ -203,6 +209,8 @@ async function getProfile(req, res) {
                 u.role,
                 u.rating,
                 u.is_verified,
+                u.is_blocked,
+                u.avatar_url,
                 u.emergency_contact,
                 u.preferences,
                 u.created_at,
@@ -234,10 +242,53 @@ async function getProfile(req, res) {
     }
 }
 
+/**
+ * Загрузка и обновление аватара пользователя
+ * POST /api/auth/me/avatar
+ */
+async function uploadAvatar(req, res) {
+    if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    if (!req.file) {
+        return res.status(400).json({ error: 'Файл аватара не предоставлен' });
+    }
+
+    const avatarUrl = `/uploads/${req.file.filename}`;
+
+    try {
+        const query = `
+            UPDATE users
+            SET avatar_url = $1
+            WHERE id = $2
+            RETURNING id, username, first_name, last_name, phone, role, rating, is_verified, is_blocked, avatar_url, emergency_contact, preferences, created_at
+        `;
+        const result = await pool.query(query, [avatarUrl, req.user.id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        const updatedUser = formatUserProfile(result.rows[0]);
+
+        return res.json({
+            message: 'Аватар успешно загружен',
+            avatar_url: avatarUrl,
+            user: updatedUser
+        });
+    } catch (err) {
+        console.error('Ошибка в uploadAvatar:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при сохранении аватара' });
+    }
+}
+
 module.exports = {
     register,
     login,
     getProfile,
+    uploadAvatar,
     formatUserProfile,
     createToken
 };
+

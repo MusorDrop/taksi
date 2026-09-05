@@ -8,6 +8,7 @@ export interface AppContextValue {
   isAuthLoading: boolean;
   login: (name: string) => void;
   loginWithData: (token: string, backendUser: BackendUser) => void;
+  updateUser: (fields: Partial<User>) => void;
   logout: () => void;
   rides: Ride[];
   isRidesLoading: boolean;
@@ -52,6 +53,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             telegram: response.user.username,
             phone: response.user.phone ?? undefined,
             role: response.user.role,
+            avatar_url: response.user.avatar_url,
+            is_blocked: response.user.is_blocked,
           });
         }
       } catch {
@@ -91,7 +94,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       telegram: backendUser.username,
       phone: backendUser.phone ?? undefined,
       role: backendUser.role,
+      avatar_url: backendUser.avatar_url,
+      is_blocked: backendUser.is_blocked,
     });
+  }, []);
+
+  const updateUser = useCallback((fields: Partial<User>): void => {
+    setUser((prev) => (prev ? { ...prev, ...fields } : null));
   }, []);
 
   const login = useCallback((name: string): void => {
@@ -172,8 +181,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [user],
   );
 
+  // Синхронизация забронированных поездок текущего пользователя при обновлении списка
+  useEffect(() => {
+    if (!user) return;
+    const userJoinedRideIds = rides
+      .filter((r) => r.passengerIds && r.passengerIds.includes(user.id))
+      .map((r) => r.id);
+    if (userJoinedRideIds.length > 0) {
+      setPassengerRideIds((prev) => Array.from(new Set([...prev, ...userJoinedRideIds])));
+    }
+  }, [rides, user]);
+
   const joinRide = useCallback(async (rideId: string): Promise<void> => {
+    // 1. Мгновенное оптимистичное обновление списка забронированных поездок пассажира
     setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
+
+    // 2. Мгновенный оптимистичный пересчет мест и цены Split Fare без ожидания F5
+    setRides((prev) =>
+      prev.map((r) => {
+        if (r.id !== rideId) return r;
+        const currentPassengers = r.passengerIds ? [...r.passengerIds] : [];
+        const myId = user?.id || 'me';
+        if (!currentPassengers.includes(myId)) {
+          currentPassengers.push(myId);
+        }
+        const updatedSeats = Math.max(0, (r.availableSeats ?? 1) - 1);
+        const updatedPrice = Math.ceil(r.price / Math.max(currentPassengers.length, 1));
+        return {
+          ...r,
+          availableSeats: updatedSeats,
+          currentPrice: updatedPrice,
+          passengerIds: currentPassengers,
+        };
+      }),
+    );
+
+    // 3. Отправка запроса к API
     try {
       const response = await api.post<{
         message: string;
@@ -188,11 +231,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (r.id !== rideId) return r;
             const updatedSeats = response.available_seats !== undefined
               ? response.available_seats
-              : Math.max(0, (r.availableSeats ?? 1) - 1);
+              : r.availableSeats;
+            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
             const updatedPrice = response.current_price !== undefined
               ? response.current_price
-              : r.currentPrice;
-            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
+              : Math.ceil(r.price / Math.max(updatedPassengerIds?.length || 1, 1));
             return {
               ...r,
               availableSeats: updatedSeats,
@@ -202,13 +245,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-    } catch {
-      // Локальное сохранение состояния
+    } catch (err) {
+      console.error('Ошибка присоединения к поездке:', err);
+      fetchRides();
     }
-  }, []);
+  }, [user, fetchRides]);
 
   const leaveRide = useCallback(async (rideId: string): Promise<void> => {
+    // 1. Мгновенное оптимистичное удаление из списка моих поездок
     setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
+
+    // 2. Мгновенный оптимистичный пересчет свободных мест и Split Fare цены
+    setRides((prev) =>
+      prev.map((r) => {
+        if (r.id !== rideId) return r;
+        const myId = user?.id || 'me';
+        const currentPassengers = (r.passengerIds || []).filter((id) => id !== myId);
+        const updatedSeats = r.totalSeats !== undefined
+          ? Math.min(r.totalSeats, (r.availableSeats ?? 0) + 1)
+          : (r.availableSeats ?? 0) + 1;
+        const updatedPrice = Math.ceil(r.price / Math.max(currentPassengers.length, 1));
+        return {
+          ...r,
+          availableSeats: updatedSeats,
+          currentPrice: updatedPrice,
+          passengerIds: currentPassengers,
+        };
+      }),
+    );
+
+    // 3. Отправка запроса к API
     try {
       const response = await api.post<{
         message: string;
@@ -223,11 +289,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (r.id !== rideId) return r;
             const updatedSeats = response.available_seats !== undefined
               ? response.available_seats
-              : (r.availableSeats ?? 0) + 1;
+              : r.availableSeats;
+            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
             const updatedPrice = response.current_price !== undefined
               ? response.current_price
-              : r.currentPrice;
-            const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
+              : Math.ceil(r.price / Math.max(updatedPassengerIds?.length || 1, 1));
             return {
               ...r,
               availableSeats: updatedSeats,
@@ -237,10 +303,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }),
         );
       }
-    } catch {
-      // Локальное сохранение состояния
+    } catch (err) {
+      console.error('Ошибка отмены участия в поездке:', err);
+      fetchRides();
     }
-  }, []);
+  }, [user, fetchRides]);
 
   const contextValue = useMemo<AppContextValue>(
     () => ({
@@ -248,6 +315,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isAuthLoading,
       login,
       loginWithData,
+      updateUser,
       logout,
       rides,
       isRidesLoading,
@@ -263,6 +331,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isAuthLoading,
       login,
       loginWithData,
+      updateUser,
       logout,
       rides,
       isRidesLoading,

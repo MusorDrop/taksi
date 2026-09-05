@@ -8,3 +8,7 @@ yarn-error.log
 .env.local
 .env.development
 .env.production
+
+# Uploads
+uploads/*
+!uploads/.gitkeep

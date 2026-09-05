@@ -14,12 +14,18 @@ import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import AddIcon from '@mui/icons-material/Add';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
 
-export default function FindRidesScreen() {
-  const { rides, passengerRideIds, joinRide, leaveRide, isRidesLoading, ridesError, fetchRides } = useApp();
+interface FindRidesScreenProps {
+  onNavigateToOffer?: () => void;
+}
+
+export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenProps) {
+  const { user, rides, passengerRideIds, joinRide, leaveRide, isRidesLoading, ridesError, fetchRides } = useApp();
   const [query, setQuery] = useState<string>('');
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiQuery, setAiQuery] = useState<string>('');
@@ -188,11 +194,72 @@ export default function FindRidesScreen() {
             </Paper>
           ))}
         </Stack>
+      ) : rides.length === 0 ? (
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 4,
+            borderRadius: 3,
+            textAlign: 'center',
+            bgcolor: 'background.paper',
+            borderStyle: 'dashed',
+            borderColor: 'primary.light',
+          }}
+        >
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              bgcolor: 'primary.light',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mx: 'auto',
+              mb: 2,
+            }}
+          >
+            <DirectionsCarIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+            Поездок пока нет, стань первым водителем!
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 360, mx: 'auto', mb: 2.5 }}>
+            Опубликуйте свой маршрут между кампусами или корпусами УрФУ, разделите расходы на бензин и помогите другим студентам добраться с комфортом.
+          </Typography>
+          {onNavigateToOffer && (
+            <Button
+              variant="contained"
+              size="medium"
+              startIcon={<AddIcon />}
+              onClick={onNavigateToOffer}
+              sx={{ px: 3, py: 1 }}
+            >
+              Создать поездку
+            </Button>
+          )}
+        </Paper>
       ) : filteredRides.length === 0 ? (
         <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Поездки не найдены. Попробуйте изменить фильтры.
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+            Поездки не найдены
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            По выбранным фильтрам ничего не найдено. Попробуйте сбросить параметры поиска.
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setQuery('');
+              setAiQuery('');
+              setFilterDay(null);
+              setFilterDest('');
+            }}
+          >
+            Сбросить фильтры
+          </Button>
         </Paper>
       ) : (
         <Stack spacing={1.5}>
@@ -200,7 +267,8 @@ export default function FindRidesScreen() {
             <RideCard
               key={ride.id}
               ride={ride}
-              isPassenger={passengerRideIds.includes(ride.id)}
+              isPassenger={passengerRideIds.includes(ride.id) || Boolean(user?.id && ride.passengerIds?.includes(user.id))}
+              isDriver={Boolean(user?.id && ride.driverId === user.id)}
               onJoin={() => joinRide(ride.id)}
               onLeave={() => leaveRide(ride.id)}
             />

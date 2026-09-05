@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const helmet = require('helmet');
 const pool = require('./db');
 
@@ -8,17 +9,22 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-// Защита HTTP-заголовков с помощью Helmet
-app.use(helmet());
+// Защита HTTP-заголовков с помощью Helmet с разрешением загрузки ресурсов с разных origins
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:5173' }));
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
+
+// Раздача статических файлов (аватарки пользователей)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use(express.static('uploads'));
 
 // Роуты API
 const authRoutes = require('./routes/authRoutes');
 const rideRoutes = require('./routes/rideRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 // Базовый роут проверки здоровья сервера
 app.get('/api/health', async (req, res) => {
@@ -35,6 +41,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Fallback для несуществующих маршрутов (404)
 app.use((req, res) => {

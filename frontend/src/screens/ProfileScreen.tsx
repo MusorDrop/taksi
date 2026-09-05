@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -16,12 +16,19 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import SendIcon from '@mui/icons-material/Send';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { useApp } from '../AppContext';
 import { api } from '../api';
-import type { Vehicle, VehiclesResponse } from '../types';
+import { formatAvatarUrl } from '../utils';
+import type { Vehicle, VehiclesResponse, BackendUser } from '../types';
 
 export default function ProfileScreen() {
-  const { user, logout, rides, passengerRideIds } = useApp();
+  const { user, logout, rides, passengerRideIds, updateUser } = useApp();
+
+  // Состояния для загрузки аватарки
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarSuccess, setAvatarSuccess] = useState<boolean>(false);
 
   // Состояния для управления гаражом автомобилей
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -95,6 +102,48 @@ export default function ProfileScreen() {
     }
   };
 
+  // Загрузка аватарки пользователя
+  const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Пожалуйста, выберите файл изображения (JPEG, PNG, WEBP, GIF)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Размер файла не должен превышать 5 МБ');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+    setAvatarError(null);
+    setAvatarSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const res = await api.post<{ message: string; avatar_url: string; user?: BackendUser }>(
+        '/api/auth/me/avatar',
+        formData
+      );
+
+      if (res?.avatar_url) {
+        updateUser({ avatar_url: res.avatar_url });
+        setAvatarSuccess(true);
+        setTimeout(() => setAvatarSuccess(false), 3000);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось загрузить аватар';
+      setAvatarError(message);
+    } finally {
+      setIsUploadingAvatar(false);
+      e.target.value = '';
+    }
+  };
+
   if (!user) return null;
 
   const initials = user.name
@@ -114,18 +163,69 @@ export default function ProfileScreen() {
       </Typography>
 
       <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, textAlign: 'center' }}>
-        <Avatar
-          sx={{
-            width: 80,
-            height: 80,
-            bgcolor: 'primary.main',
-            fontSize: 28,
-            mx: 'auto',
-            mb: 2,
-          }}
-        >
-          {initials}
-        </Avatar>
+        <Box sx={{ position: 'relative', width: 88, height: 88, mx: 'auto', mb: 1.5 }}>
+          <Avatar
+            src={formatAvatarUrl(user.avatar_url)}
+            alt={user.name}
+            sx={{
+              width: 88,
+              height: 88,
+              bgcolor: 'primary.main',
+              fontSize: 28,
+              boxShadow: 1,
+            }}
+          >
+            {initials}
+          </Avatar>
+          {isUploadingAvatar && (
+            <CircularProgress
+              size={88}
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                color: 'primary.light',
+                zIndex: 1,
+              }}
+            />
+          )}
+        </Box>
+
+        <Box sx={{ mb: 2 }}>
+          <Button
+            component="label"
+            size="small"
+            variant="outlined"
+            startIcon={<PhotoCameraIcon />}
+            disabled={isUploadingAvatar}
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+          >
+            {isUploadingAvatar ? 'Загрузка...' : user.avatar_url ? 'Сменить фото' : 'Загрузить аватар'}
+            <input
+              type="file"
+              hidden
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleAvatarChange}
+            />
+          </Button>
+        </Box>
+
+        {avatarSuccess && (
+          <Alert severity="success" sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem' }}>
+            Аватар успешно обновлен!
+          </Alert>
+        )}
+
+        {avatarError && (
+          <Alert
+            severity="error"
+            onClose={() => setAvatarError(null)}
+            sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem' }}
+          >
+            {avatarError}
+          </Alert>
+        )}
+
         <Typography variant="h6" sx={{ fontWeight: 600 }}>
           {user.name}
         </Typography>
@@ -284,17 +384,32 @@ export default function ProfileScreen() {
         )}
       </Paper>
 
-      <Button
-        fullWidth
-        variant="outlined"
-        color="error"
-        size="large"
-        startIcon={<LogoutIcon />}
-        onClick={logout}
-        sx={{ py: 1.2 }}
-      >
-        Выйти
-      </Button>
+      <Stack spacing={1.5} sx={{ mt: 2 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          color="secondary"
+          size="medium"
+          onClick={() => {
+            window.location.hash = 'admin';
+          }}
+          sx={{ py: 1, textTransform: 'none' }}
+        >
+          Панель администратора (/admin)
+        </Button>
+
+        <Button
+          fullWidth
+          variant="outlined"
+          color="error"
+          size="large"
+          startIcon={<LogoutIcon />}
+          onClick={logout}
+          sx={{ py: 1.2 }}
+        >
+          Выйти
+        </Button>
+      </Stack>
     </Box>
   );
 }

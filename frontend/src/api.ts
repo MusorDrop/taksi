@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Модуль для выполнения HTTP-запросов к API без внешних библиотек.
  * Реализует автоматическое добавление JWT-токена, обработку 401 ошибки и поддержку AbortSignal.
  */
@@ -25,6 +25,30 @@ export function setAuthToken(token: string): void {
  */
 export function removeAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * Получение ключа администратора из сессионного хранилища
+ */
+export function getAdminKey(): string | null {
+  return sessionStorage.getItem('admin_key') || sessionStorage.getItem('adminKey');
+}
+
+/**
+ * Сохранение ключа администратора в сессионное хранилище
+ * @param key - Ключ администратора (30 символов)
+ */
+export function setAdminKey(key: string): void {
+  sessionStorage.setItem('admin_key', key);
+  sessionStorage.setItem('adminKey', key);
+}
+
+/**
+ * Удаление ключа администратора из сессионного хранилища
+ */
+export function removeAdminKey(): void {
+  sessionStorage.removeItem('admin_key');
+  sessionStorage.removeItem('adminKey');
 }
 
 /**
@@ -56,17 +80,29 @@ async function extractErrorMessage(response: Response): Promise<string> {
 }
 
 /**
- * Формирование заголовков запроса с добавлением авторизационного токена
+ * Формирование заголовков запроса с добавлением авторизационного токена и ключа администратора
+ * @param endpoint - URL адрес запроса
  * @param customHeaders - Пользовательские заголовки
+ * @param isFormData - Флаг передачи данных формы (multipart)
  */
-function buildRequestHeaders(customHeaders?: HeadersInit): Headers {
+function buildRequestHeaders(
+  endpoint: string,
+  customHeaders?: HeadersInit,
+  isFormData: boolean = false
+): Headers {
   const headers = new Headers(customHeaders);
-  if (!headers.has('Content-Type')) {
+  if (!isFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   const token = getAuthToken();
-  if (token) {
+  if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+  if (endpoint.includes('/api/admin')) {
+    const adminKey = getAdminKey();
+    if (adminKey && !headers.has('X-Admin-Key')) {
+      headers.set('X-Admin-Key', adminKey);
+    }
   }
   return headers;
 }
@@ -82,7 +118,8 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
  */
 export async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers, ...restOptions } = options;
-  const requestHeaders = buildRequestHeaders(headers);
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const requestHeaders = buildRequestHeaders(endpoint, headers, isFormData);
 
   const config: RequestInit = {
     ...restOptions,
@@ -90,13 +127,14 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
   };
 
   if (body !== undefined) {
-    config.body = JSON.stringify(body);
+    config.body = isFormData ? (body as BodyInit) : JSON.stringify(body);
   }
 
   const response = await fetch(endpoint, config);
 
   if (!response.ok) {
-    if (response.status === 401) {
+    const isAdminRequest = endpoint.startsWith('/api/admin') || requestHeaders.has('X-Admin-Key');
+    if (response.status === 401 && !isAdminRequest) {
       handleUnauthorized();
     }
     const message = await extractErrorMessage(response);
@@ -112,7 +150,7 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
 }
 
 /**
- * Объект API с вспомогательными методами GET, POST, PUT, DELETE
+ * Объект API с вспомогательными методами GET, POST, PUT, PATCH, DELETE
  */
 export const api = {
   get: <T>(endpoint: string, options?: RequestOptions): Promise<T> =>
@@ -124,6 +162,10 @@ export const api = {
   put: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> =>
     request<T>(endpoint, { ...options, method: 'PUT', body }),
 
+  patch: <T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> =>
+    request<T>(endpoint, { ...options, method: 'PATCH', body }),
+
   delete: <T>(endpoint: string, options?: RequestOptions): Promise<T> =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
 };
+

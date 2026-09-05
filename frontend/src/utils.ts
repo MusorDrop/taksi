@@ -104,6 +104,28 @@ export function resolveCoordsToName(lon?: number, lat?: number, fallbackName: st
 }
 
 /**
+ * Преобразование относительного пути к аватару в полный URL бэкенда
+ * @param url - Путь к аватару
+ * @returns Полный URL аватара или undefined
+ */
+export function formatAvatarUrl(url?: string | null): string | undefined {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    return undefined;
+  }
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/uploads/')) {
+    return `http://localhost:3000${trimmed}`;
+  }
+  if (trimmed.startsWith('uploads/')) {
+    return `http://localhost:3000/${trimmed}`;
+  }
+  return trimmed;
+}
+
+/**
  * Преобразование модели поездки с бэкенда в формат интерфейса фронтенда
  * @param backendRide - Модель поездки из ответа API
  */
@@ -129,6 +151,7 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     id: backendRide.id,
     driverId: backendRide.driver_id,
     driverName: backendRide.driver_name || 'Водитель',
+    driverAvatarUrl: backendRide.driver_avatar_url || null,
     from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
     to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
     days: [day],

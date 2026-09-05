@@ -29,6 +29,8 @@ export interface User {
   phone?: string;
   role?: string;
   averageRating?: number | null;
+  avatar_url?: string | null;
+  is_blocked?: boolean;
 }
 
 export interface Ride {
@@ -51,6 +53,7 @@ export interface Ride {
   vehicleId?: string | null;
   status?: string;
   averageRating?: number | null;
+  driverAvatarUrl?: string | null;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -68,6 +71,9 @@ export interface BackendUser {
   rating?: number | null;
   average_rating?: number | string | null;
   is_verified?: boolean;
+  avatar_url?: string | null;
+  is_blocked?: boolean;
+  created_at?: string;
 }
 
 /**
@@ -90,6 +96,7 @@ export interface BackendRide {
   driver_phone?: string | null;
   driver_rating?: number | null;
   average_rating?: number | string | null;
+  driver_avatar_url?: string | null;
   departure_time: string;
   start_coords?: { lon: number; lat: number };
   end_coords?: { lon: number; lat: number };
@@ -157,5 +164,60 @@ export interface Review {
 export interface ReviewsResponse {
   count: number;
   reviews: Review[];
+}
+
+/**
+ * Модель поездки для панели администратора
+ */
+export interface AdminRide {
+  id: string;
+  driver_id: string;
+  vehicle_id?: string | null;
+  driver_username?: string | null;
+  driver_first_name?: string | null;
+  driver_last_name?: string | null;
+  driver_avatar_url?: string | null;
+  departure_time: string;
+  start_lon?: number | null;
+  start_lat?: number | null;
+  end_lon?: number | null;
+  end_lat?: number | null;
+  total_seats: number;
+  available_seats: number;
+  status: string;
+  base_price: number;
+  created_at?: string;
+}
+
+/**
+ * Модель автомобиля для панели администратора
+ */
+export interface AdminVehicle extends Vehicle {
+  driver_username?: string | null;
+  driver_first_name?: string | null;
+}
+
+/**
+ * Ответ сервера на запрос списка пользователей в админке
+ */
+export interface AdminUsersResponse {
+  count: number;
+  users: BackendUser[];
+}
+
+/**
+ * Ответ сервера на запрос списка поездок в админке
+ */
+export interface AdminRidesResponse {
+  count: number;
+  rides: AdminRide[];
+}
+
+/**
+ * Ответ сервера на запрос списка автомобилей в админке
+ */
+export interface AdminVehiclesResponse {
+  count: number;
+  vehicles: AdminVehicle[];
 }
 
