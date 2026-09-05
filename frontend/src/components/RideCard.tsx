@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Stack from '@mui/material/Stack';
@@ -18,6 +18,11 @@ import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import FormControl from '@mui/material/FormControl';
+import FormLabel from '@mui/material/FormLabel';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -30,21 +35,66 @@ import EditIcon from '@mui/icons-material/Edit';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import GroupIcon from '@mui/icons-material/Group';
-import type { Ride } from '../types';
+import { DAY_FULL, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
 import { api } from '../api';
 import { useApp } from '../AppContext';
+
+/**
+ * Преобразование дня недели (Mon, Tue...) в краткий русский формат (Пн, Вт...)
+ * @param day - Ключ дня или строка
+ * @returns Название дня на русском
+ */
+function formatDayToRussian(day?: string | null): string {
+  if (!day) return '';
+  const trimmed = day.trim();
+  const matchKey = (Object.keys(DAY_SHORT) as DayKey[]).find(
+    (k) => k.toLowerCase() === trimmed.toLowerCase()
+  );
+  return matchKey ? DAY_SHORT[matchKey] : trimmed;
+}
+
+/**
+ * Преобразование списка дней на русский язык (Пн, Вт, Ср...)
+ * @param daysStr - Строка дней через запятую
+ * @returns Список дней на русском через запятую
+ */
+function formatDaysToRussian(daysStr?: string | null): string {
+  if (!daysStr) return '';
+  return daysStr
+    .split(',')
+    .map((d) => d.trim())
+    .filter(Boolean)
+    .map(formatDayToRussian)
+    .join(', ');
+}
+
+/**
+ * Получение полного названия дня с кратким обозначением (например: "Среда (Ср)")
+ * @param day - Ключ дня
+ * @returns Отформатированное название
+ */
+function getDayFullLabel(day: string): string {
+  const trimmed = day.trim();
+  const matchKey = (Object.keys(DAY_FULL) as DayKey[]).find(
+    (k) => k.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (matchKey) {
+    return `${DAY_FULL[matchKey]} (${DAY_SHORT[matchKey]})`;
+  }
+  return trimmed;
+}
 
 interface RideCardProps {
   ride: Ride;
   isPassenger?: boolean;
   isDriver?: boolean;
-  onJoin?: () => void;
+  onJoin?: (selectedDay?: string) => void | Promise<void>;
   onLeave?: () => void;
 }
 
 export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide } = useApp();
+  const { kickPassenger, updateRide, joinRide } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [rating, setRating] = useState<number>(5);
@@ -52,6 +102,12 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [isReviewed, setIsReviewed] = useState<boolean>(false);
+
+  // Выбор дня для регулярной поездки
+  const [joinDialogOpen, setJoinDialogOpen] = useState<boolean>(false);
+  const [selectedDay, setSelectedDay] = useState<string>('');
+  const [isJoining, setIsJoining] = useState<boolean>(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   // Исключение пассажира водителем
   const [kickingPassengerId, setKickingPassengerId] = useState<string | null>(null);
@@ -141,7 +197,51 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
 
   const avatarUrl = formatAvatarUrl(ride.driverAvatarUrl);
   const isRegular = ride.rideType === 'regular' || ride.ride_type === 'regular';
-  const regularLabel = ride.regularDays || ride.regular_days || 'Регулярная';
+  const regularLabel = formatDaysToRussian(ride.regularDays || ride.regular_days) || 'Регулярная';
+
+  const availableDays = useMemo(() => {
+    const raw = ride.regular_days || ride.regularDays || '';
+    const parsed = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return parsed.length > 0 ? parsed : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  }, [ride.regular_days, ride.regularDays]);
+
+  const handleJoinClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isRegular) {
+      const defaultDay = availableDays[0] || 'Mon';
+      setSelectedDay(defaultDay);
+      setJoinError(null);
+      setJoinDialogOpen(true);
+    } else {
+      if (onJoin) {
+        onJoin();
+      } else {
+        joinRide(ride.id);
+      }
+    }
+  };
+
+  const handleConfirmJoin = async (): Promise<void> => {
+    if (!selectedDay) return;
+    setIsJoining(true);
+    setJoinError(null);
+    try {
+      if (onJoin) {
+        await onJoin(selectedDay);
+      } else {
+        await joinRide(ride.id, selectedDay);
+      }
+      setJoinDialogOpen(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось присоединиться к поездке';
+      setJoinError(message);
+    } finally {
+      setIsJoining(false);
+    }
+  };
 
   return (
     <Card
@@ -215,13 +315,15 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
         </Stack>
 
         <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
-          <Chip
-            size="small"
-            icon={<EventIcon sx={{ fontSize: 14 }} />}
-            label={ride.dateFormatted || ride.dateString || 'Сегодня'}
-            variant="outlined"
-            sx={{ maxWidth: '100%' }}
-          />
+          {!isRegular && (
+            <Chip
+              size="small"
+              icon={<EventIcon sx={{ fontSize: 14 }} />}
+              label={ride.dateFormatted || ride.dateString || 'Сегодня'}
+              variant="outlined"
+              sx={{ maxWidth: '100%' }}
+            />
+          )}
           {isRegular && (
             <Chip
               size="small"
@@ -296,6 +398,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                           <Box sx={{ minWidth: 0 }}>
                             <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                               {p.name || p.username || 'Попутчик'}
+                              {p.selected_day ? ` (на ${formatDayToRussian(p.selected_day)})` : ''}
                             </Typography>
                             {p.telegram && (
                               <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
@@ -465,10 +568,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   fullWidth
                   variant="outlined"
                   size="small"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onJoin();
-                  }}
+                  onClick={handleJoinClick}
                 >
                   Присоединиться
                 </Button>
@@ -597,6 +697,62 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             startIcon={isSubmittingReview ? <CircularProgress size={16} color="inherit" /> : null}
           >
             {isSubmittingReview ? 'Отправка...' : 'Отправить отзыв'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Модальное окно выбора дня для регулярной поездки */}
+      <Dialog
+        open={joinDialogOpen}
+        onClose={() => !isJoining && setJoinDialogOpen(false)}
+        onClick={(e) => e.stopPropagation()}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Выбор дня поездки</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Маршрут: <strong>{ride.from}</strong> → <strong>{ride.to}</strong> ({ride.time})
+          </Typography>
+          {joinError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setJoinError(null)}>
+              {joinError}
+            </Alert>
+          )}
+          <FormControl component="fieldset" fullWidth>
+            <FormLabel component="legend" sx={{ fontSize: '0.85rem', mb: 1, fontWeight: 500 }}>
+              Выберите день для регулярной поездки:
+            </FormLabel>
+            <RadioGroup
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(e.target.value)}
+            >
+              {availableDays.map((day) => (
+                <FormControlLabel
+                  key={day}
+                  value={day}
+                  control={<Radio size="small" />}
+                  label={getDayFullLabel(day)}
+                />
+              ))}
+            </RadioGroup>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setJoinDialogOpen(false)}
+            disabled={isJoining}
+            color="inherit"
+          >
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!selectedDay || isJoining}
+            onClick={handleConfirmJoin}
+            startIcon={isJoining ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {isJoining ? 'Подключение...' : 'Подтвердить'}
           </Button>
         </DialogActions>
       </Dialog>
