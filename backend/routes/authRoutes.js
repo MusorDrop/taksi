@@ -29,6 +29,9 @@ router.post('/login', authLimiter, authController.login);
 // Получение профиля текущего пользователя
 router.get('/me', authenticateToken, authController.getProfile);
 
+// Обновление профиля текущего пользователя (телефон и Telegram)
+router.patch('/me', authenticateToken, authController.updateProfile);
+
 // Загрузка аватарки текущего пользователя (с валидацией расширения и сигнатуры magic bytes)
 router.post('/me/avatar', authenticateToken, handleAvatarUpload, authController.uploadAvatar);
 

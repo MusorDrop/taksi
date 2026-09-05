@@ -99,6 +99,13 @@ async function register(req, res) {
         });
     }
 
+    // Проверка обязательного номера телефона при регистрации
+    if (!phone || typeof phone !== 'string' || phone.trim().length === 0) {
+        return res.status(400).json({
+            error: 'Поле phone (номер телефона) обязательно для регистрации'
+        });
+    }
+
     // Строгая валидация роли пользователя
     const ALLOWED_ROLES = ['driver', 'passenger', 'both'];
     const userRole = role !== undefined ? role : 'both';
@@ -114,7 +121,7 @@ async function register(req, res) {
             password: password,
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
-            phone: phone ? phone.trim() : null,
+            phone: phone.trim(),
             role: userRole
         });
 
@@ -283,12 +290,98 @@ async function uploadAvatar(req, res) {
     }
 }
 
+/**
+ * Обновление профиля текущего пользователя (телефон и Telegram)
+ * PATCH /api/auth/me
+ */
+async function updateProfile(req, res) {
+    if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const { phone, telegram, username, first_name } = req.body;
+
+    const rawTg = telegram !== undefined ? telegram : username;
+    let newTg = null;
+    if (rawTg !== undefined) {
+        if (typeof rawTg !== 'string' || rawTg.trim().length === 0) {
+            return res.status(400).json({ error: 'Telegram / имя пользователя не может быть пустым' });
+        }
+        newTg = rawTg.replace(/^@/, '').trim();
+    }
+
+    let newPhone = null;
+    if (phone !== undefined) {
+        if (typeof phone !== 'string' || phone.trim().length === 0) {
+            return res.status(400).json({ error: 'Номер телефона не может быть пустым' });
+        }
+        newPhone = phone.trim();
+        if (newPhone.length > 20) {
+            return res.status(400).json({ error: 'Номер телефона не должен превышать 20 символов' });
+        }
+    }
+
+    const newFirstName = typeof first_name === 'string' && first_name.trim().length > 0
+        ? first_name.trim()
+        : null;
+
+    if (newTg === null && newPhone === null && newFirstName === null) {
+        return res.status(400).json({ error: 'Необходимо указать хотя бы одно поле для обновления (phone или telegram)' });
+    }
+
+    try {
+        if (newTg) {
+            const checkConflict = await pool.query(
+                'SELECT id FROM users WHERE username = $1 AND id != $2',
+                [newTg, req.user.id]
+            );
+            if (checkConflict.rows.length > 0) {
+                return res.status(409).json({ error: 'Пользователь с таким Telegram / именем уже существует' });
+            }
+        }
+
+        const query = `
+            UPDATE users
+            SET
+                username = COALESCE($1, username),
+                phone = COALESCE($2, phone),
+                first_name = COALESCE($3, first_name)
+            WHERE id = $4
+            RETURNING 
+                id, username, first_name, last_name, phone, role, rating, is_verified, 
+                is_blocked, avatar_url, emergency_contact, preferences, created_at,
+                (SELECT ROUND(AVG(rating)::numeric, 2) FROM reviews WHERE reviewee_id = users.id) AS average_rating
+        `;
+
+        const result = await pool.query(query, [newTg, newPhone, newFirstName, req.user.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        const userRow = result.rows[0];
+        const formattedUser = formatUserProfile(userRow, userRow.average_rating);
+
+        return res.json({
+            message: 'Профиль успешно обновлен',
+            user: formattedUser
+        });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Пользователь с таким Telegram / именем уже существует' });
+        }
+        console.error('Ошибка в updateProfile:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при обновлении профиля' });
+    }
+}
+
 module.exports = {
     register,
     login,
     getProfile,
     uploadAvatar,
+    updateProfile,
     formatUserProfile,
     createToken
 };
+
 
