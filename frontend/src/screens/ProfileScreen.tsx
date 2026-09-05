@@ -19,6 +19,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import { useApp } from '../AppContext';
 import { api } from '../api';
+import { formatAvatarUrl } from '../utils';
 import type { Vehicle, VehiclesResponse, BackendUser } from '../types';
 
 export default function ProfileScreen() {
@@ -164,7 +165,7 @@ export default function ProfileScreen() {
       <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, textAlign: 'center' }}>
         <Box sx={{ position: 'relative', width: 88, height: 88, mx: 'auto', mb: 1.5 }}>
           <Avatar
-            src={user.avatar_url || undefined}
+            src={formatAvatarUrl(user.avatar_url)}
             alt={user.name}
             sx={{
               width: 88,

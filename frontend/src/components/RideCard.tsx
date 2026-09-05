@@ -25,7 +25,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
 import type { Ride } from '../types';
-import { formatDays } from '../utils';
+import { formatDays, formatAvatarUrl } from '../utils';
 import { api } from '../api';
 
 interface RideCardProps {
@@ -84,6 +84,8 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
         : (isPassenger ? 1 : 0));
   const hasMultiplePassengers = passengerCount > 1 || ride.currentPrice < ride.price;
 
+  const avatarUrl = formatAvatarUrl(ride.driverAvatarUrl);
+
   return (
     <Card
       variant="outlined"
@@ -96,7 +98,11 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     >
       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar sx={{ bgcolor: 'primary.main', width: 40, height: 40, fontSize: 14 }}>
+          <Avatar
+            src={avatarUrl}
+            alt={ride.driverName}
+            sx={{ bgcolor: 'primary.main', width: 40, height: 40, fontSize: 14 }}
+          >
             {initials}
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -190,7 +196,11 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               </Typography>
             ) : (
               <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
-                <Avatar sx={{ bgcolor: 'primary.light', width: 32, height: 32, fontSize: 12 }}>
+                <Avatar
+                  src={avatarUrl}
+                  alt={ride.driverName}
+                  sx={{ bgcolor: 'primary.light', width: 32, height: 32, fontSize: 12 }}
+                >
                   {initials}
                 </Avatar>
                 <Box>

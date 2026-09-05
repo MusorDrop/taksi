@@ -253,6 +253,7 @@ function mapRideRow(row) {
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_phone: row.driver_phone || null,
         driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
+        driver_avatar_url: row.driver_avatar_url || null,
         departure_time: row.departure_time,
         start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
         end_coords: { lon: Number(row.end_lon), lat: Number(row.end_lat) },
@@ -315,7 +316,7 @@ async function createRide(req, res) {
         await client.query('BEGIN');
 
         const driverCheck = await client.query(
-            'SELECT id, username, first_name, last_name, phone, rating FROM users WHERE id = $1',
+            'SELECT id, username, first_name, last_name, phone, rating, avatar_url FROM users WHERE id = $1',
             [driverId]
         );
         if (driverCheck.rows.length === 0) {
@@ -415,6 +416,7 @@ async function createRide(req, res) {
             driver_last_name: driverInfo.last_name,
             driver_phone: driverInfo.phone,
             driver_rating: driverInfo.rating,
+            driver_avatar_url: driverInfo.avatar_url || null,
             passenger_ids: []
         };
 
@@ -502,6 +504,7 @@ async function getRides(req, res) {
             u.last_name as driver_last_name,
             u.phone as driver_phone,
             u.rating as driver_rating,
+            u.avatar_url as driver_avatar_url,
             r.departure_time,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,

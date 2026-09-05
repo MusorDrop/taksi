@@ -33,11 +33,11 @@ function isValidBrowserUserAgent(userAgent) {
  */
 function isValidFetchMode(fetchMode) {
     if (!fetchMode || typeof fetchMode !== 'string') {
-        return false;
+        return true;
     }
 
     const normalizedMode = fetchMode.trim().toLowerCase();
-    return normalizedMode === 'cors' || normalizedMode === 'same-origin';
+    return normalizedMode === 'cors' || normalizedMode === 'same-origin' || normalizedMode === 'navigate';
 }
 
 /**
@@ -68,7 +68,16 @@ function extractRequestOrigin(req) {
  * @returns {string[]} Список доверенных origin.
  */
 function getAllowedOrigins() {
-    const defaults = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+    const defaults = [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5174',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:4173',
+        'http://127.0.0.1:4173'
+    ];
     if (!process.env.ALLOWED_ORIGINS) {
         return defaults;
     }
@@ -88,8 +97,10 @@ function getAllowedOrigins() {
  */
 function isTrustedOrigin(req) {
     const requestOrigin = extractRequestOrigin(req);
+    const host = req.headers.host;
+
     if (!requestOrigin) {
-        return false;
+        return Boolean(host && (host.includes('localhost') || host.includes('127.0.0.1')));
     }
 
     const allowedOrigins = getAllowedOrigins();
@@ -97,7 +108,10 @@ function isTrustedOrigin(req) {
         return true;
     }
 
-    const host = req.headers.host;
+    if (requestOrigin.startsWith('http://localhost:') || requestOrigin.startsWith('http://127.0.0.1:')) {
+        return true;
+    }
+
     if (!host) {
         return false;
     }

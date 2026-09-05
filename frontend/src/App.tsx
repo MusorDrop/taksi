@@ -20,7 +20,16 @@ function checkIsAdminRoute(): boolean {
   if (typeof window === 'undefined') return false;
   const path = window.location.pathname.toLowerCase();
   const hash = window.location.hash.toLowerCase();
-  return path.endsWith('/admin') || path.endsWith('/admin/') || path.includes('/admin') || hash === '#admin' || hash === '#/admin';
+  const search = window.location.search.toLowerCase();
+  return (
+    path.endsWith('/admin') ||
+    path.endsWith('/admin/') ||
+    path.includes('/admin') ||
+    hash === '#admin' ||
+    hash === '#/admin' ||
+    hash.includes('admin') ||
+    search.includes('admin')
+  );
 }
 
 const globalStyles = (
@@ -82,8 +91,10 @@ function AppContent() {
             onBack={() => {
               if (window.location.hash) {
                 window.location.hash = '';
-              } else {
-                window.history.pushState(null, '', '/taksi/');
+              }
+              if (window.location.pathname.includes('/admin')) {
+                const cleanPath = window.location.pathname.replace(/\/admin\/?$/, '').replace(/\/admin\/?/, '');
+                window.history.pushState(null, '', cleanPath || '/taksi/');
               }
               setIsAdminRoute(false);
             }}
@@ -128,7 +139,7 @@ function AppContent() {
           pt: 2,
         }}
       >
-        {tab === 'find' && <FindRidesScreen />}
+        {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}
         {tab === 'offer' && <OfferRideScreen />}
         {tab === 'trips' && <MyTripsScreen />}
         {tab === 'profile' && <ProfileScreen />}

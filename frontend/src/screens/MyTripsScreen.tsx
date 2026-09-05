@@ -12,7 +12,9 @@ export default function MyTripsScreen() {
   const { rides, user, passengerRideIds, leaveRide } = useApp();
   const [tab, setTab] = useState(0);
 
-  const passengerRides = rides.filter((r) => passengerRideIds.includes(r.id));
+  const passengerRides = rides.filter(
+    (r) => passengerRideIds.includes(r.id) || Boolean(user?.id && r.passengerIds?.includes(user.id))
+  );
   const driverRides = rides.filter((r) => r.driverId === user?.id);
 
   return (

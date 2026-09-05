@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const pool = require('../db');
 const adminMiddleware = require('../middleware/adminMiddleware');
 
@@ -110,6 +110,7 @@ router.get('/rides', async (req, res) => {
                 u.username AS driver_username,
                 u.first_name AS driver_first_name,
                 u.last_name AS driver_last_name,
+                u.avatar_url AS driver_avatar_url,
                 r.departure_time,
                 ST_X(r.start_point) AS start_lon,
                 ST_Y(r.start_point) AS start_lat,

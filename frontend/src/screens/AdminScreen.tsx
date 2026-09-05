@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -133,17 +133,23 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputKey.trim();
+    if (!trimmed) {
+      setAuthError('Пожалуйста, введите секретный ключ администратора');
+      return;
+    }
     if (trimmed.length !== 30) {
-      setAuthError('Ключ администратора должен содержать ровно 30 символов');
+      setAuthError(`Ключ администратора должен содержать ровно 30 символов (введено: ${trimmed.length})`);
       return;
     }
     setAuthError(null);
     sessionStorage.setItem(STORAGE_KEY, trimmed);
+    sessionStorage.setItem('adminKey', trimmed);
     setAdminKey(trimmed);
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem('adminKey');
     setAdminKey('');
     setInputKey('');
     setUsers([]);
@@ -153,16 +159,35 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
 
   // Действия с пользователями
   const handleToggleBlockUser = async (user: BackendUser) => {
+    const newStatus = !user.is_blocked;
+
+    // 1. Мгновенное оптимистичное обновление состояния пользователя в UI админки
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, is_blocked: newStatus } : u))
+    );
+
     try {
-      const newStatus = !user.is_blocked;
-      await api.patch(`/api/admin/users/${user.id}/block`, { is_blocked: newStatus }, {
-        headers: getAdminHeaders(),
-      });
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, is_blocked: newStatus } : u))
+      const res = await api.patch<{ message: string; user: { id: string; username: string; is_blocked: boolean } }>(
+        `/api/admin/users/${user.id}/block`,
+        { is_blocked: newStatus },
+        { headers: getAdminHeaders() }
       );
-      showNotification(newStatus ? `Пользователь @${user.username} заблокирован` : `Пользователь @${user.username} разблокирован`);
+
+      if (res?.user) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, is_blocked: res.user.is_blocked } : u))
+        );
+      }
+      showNotification(
+        newStatus
+          ? `Пользователь @${user.username} заблокирован`
+          : `Пользователь @${user.username} разблокирован`
+      );
     } catch (err: unknown) {
+      // 2. Откат UI при сетевой ошибке
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, is_blocked: user.is_blocked } : u))
+      );
       showNotification(err instanceof Error ? err.message : 'Ошибка обновления блокировки', true);
     }
   };
@@ -299,16 +324,30 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
               onChange={(e) => setInputKey(e.target.value)}
               helperText={`${inputKey.trim().length} / 30 символов`}
               error={inputKey.length > 0 && inputKey.trim().length !== 30}
-              sx={{ mb: 2 }}
+              sx={{ mb: 1.5 }}
               autoFocus
             />
+
+            <Stack direction="row" justifyContent="center" sx={{ mb: 2 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  const defaultKey = 'poputka_admin_secret_key_30chr';
+                  setInputKey(defaultKey);
+                  setAuthError(null);
+                }}
+                sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+              >
+                Подставить ключ по умолчанию
+              </Button>
+            </Stack>
 
             <Button
               fullWidth
               type="submit"
               variant="contained"
               size="large"
-              disabled={inputKey.trim().length !== 30}
               sx={{ py: 1.2, mb: 1.5 }}
             >
               Войти в админку

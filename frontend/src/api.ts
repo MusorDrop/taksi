@@ -4,7 +4,6 @@
  */
 
 const TOKEN_KEY = 'auth_token';
-const ADMIN_KEY_STORAGE = 'adminKey';
 
 /**
  * Получение сохраненного JWT-токена из локального хранилища браузера
@@ -32,7 +31,7 @@ export function removeAuthToken(): void {
  * Получение ключа администратора из сессионного хранилища
  */
 export function getAdminKey(): string | null {
-  return sessionStorage.getItem(ADMIN_KEY_STORAGE);
+  return sessionStorage.getItem('admin_key') || sessionStorage.getItem('adminKey');
 }
 
 /**
@@ -40,14 +39,16 @@ export function getAdminKey(): string | null {
  * @param key - Ключ администратора (30 символов)
  */
 export function setAdminKey(key: string): void {
-  sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+  sessionStorage.setItem('admin_key', key);
+  sessionStorage.setItem('adminKey', key);
 }
 
 /**
  * Удаление ключа администратора из сессионного хранилища
  */
 export function removeAdminKey(): void {
-  sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+  sessionStorage.removeItem('admin_key');
+  sessionStorage.removeItem('adminKey');
 }
 
 /**

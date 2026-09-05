@@ -53,6 +53,7 @@ export interface Ride {
   vehicleId?: string | null;
   status?: string;
   averageRating?: number | null;
+  driverAvatarUrl?: string | null;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -95,6 +96,7 @@ export interface BackendRide {
   driver_phone?: string | null;
   driver_rating?: number | null;
   average_rating?: number | string | null;
+  driver_avatar_url?: string | null;
   departure_time: string;
   start_coords?: { lon: number; lat: number };
   end_coords?: { lon: number; lat: number };
@@ -174,6 +176,7 @@ export interface AdminRide {
   driver_username?: string | null;
   driver_first_name?: string | null;
   driver_last_name?: string | null;
+  driver_avatar_url?: string | null;
   departure_time: string;
   start_lon?: number | null;
   start_lat?: number | null;
