@@ -136,6 +136,8 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     createdAt: backendRide.created_at ? new Date(backendRide.created_at).getTime() : Date.now(),
     availableSeats: backendRide.available_seats,
     totalSeats: backendRide.total_seats,
+    vehicleId: backendRide.vehicle_id || null,
+    status: backendRide.status || 'scheduled',
   };
 }
 

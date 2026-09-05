@@ -47,6 +47,7 @@ const RAW_RIDES: Array<Omit<Ride, 'price' | 'isPeak'>> = [
     telegram: 'mariagarcia',
     distanceKm: 3.1,
     createdAt: Date.now() - 80000,
+    status: 'completed',
   },
   {
     id: 'r4',

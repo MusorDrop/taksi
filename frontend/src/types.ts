@@ -45,6 +45,8 @@ export interface Ride {
   createdAt: number;
   availableSeats?: number;
   totalSeats?: number;
+  vehicleId?: string | null;
+  status?: string;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -78,6 +80,7 @@ export interface AuthResponse {
 export interface BackendRide {
   id: string;
   driver_id: string;
+  vehicle_id?: string | null;
   driver_name: string;
   driver_phone?: string | null;
   driver_rating?: number | null;
@@ -105,5 +108,46 @@ export interface BackendRide {
 export interface RidesResponse {
   count: number;
   rides: BackendRide[];
+}
+
+/**
+ * Модель автомобиля пользователя
+ */
+export interface Vehicle {
+  id: string;
+  driver_id: string;
+  brand: string;
+  color?: string | null;
+  license_plate: string;
+  created_at?: string;
+}
+
+/**
+ * Ответ сервера со списком автомобилей
+ */
+export interface VehiclesResponse {
+  count: number;
+  vehicles: Vehicle[];
+}
+
+/**
+ * Модель отзыва о поездке
+ */
+export interface Review {
+  id: string;
+  ride_id: string;
+  reviewer_id: string;
+  reviewee_id: string;
+  rating: number;
+  comment?: string | null;
+  created_at?: string;
+}
+
+/**
+ * Ответ сервера со списком отзывов
+ */
+export interface ReviewsResponse {
+  count: number;
+  reviews: Review[];
 }
 

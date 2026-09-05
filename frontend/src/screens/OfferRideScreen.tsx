@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, useEffect, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -7,16 +7,24 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Paper from '@mui/material/Paper';
 import InputAdornment from '@mui/material/InputAdornment';
+import Alert from '@mui/material/Alert';
+import CircularProgress from '@mui/material/CircularProgress';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import SendIcon from '@mui/icons-material/Send';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PaymentsIcon from '@mui/icons-material/Payments';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import RouteMap from '../components/RouteMap';
 import { useApp } from '../AppContext';
-import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
+import { DAY_KEYS, DAY_SHORT, type DayKey, type Vehicle, type VehiclesResponse } from '../types';
 import { estimateDistance, formatPrice, getAiRecommendedPrice, isPeakTime } from '../utils';
+import { api } from '../api';
 
 // Indigo/violet accent palette for the AI recommendation surface — kept local
 // to this screen so the rest of the app's MUI theme (blue) is untouched.
@@ -40,6 +48,30 @@ export default function OfferRideScreen() {
   const [days, setDays] = useState<DayKey[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
   const [price, setPrice] = useState<string>('');
   const [success, setSuccess] = useState(false);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Загрузка доступных автомобилей пользователя для привязки к поездке
+  useEffect(() => {
+    let isMounted = true;
+    async function loadVehicles(): Promise<void> {
+      try {
+        const res = await api.get<VehiclesResponse>('/api/vehicles');
+        if (isMounted && res?.vehicles && res.vehicles.length > 0) {
+          setVehicles(res.vehicles);
+          setSelectedVehicleId(res.vehicles[0].id);
+        }
+      } catch {
+        // При недоступности бэкенда форма работает без выбора автомобиля
+      }
+    }
+    loadVehicles();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // The route distance is only "known" once both endpoints are filled in —
   // before that, the AI box simulates not having resolved a route yet and
@@ -71,25 +103,36 @@ export default function OfferRideScreen() {
     setPrice(String(recommendedPrice));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
-    if (!canSubmit || parsedPrice === null) return;
-    addRide({
-      from,
-      to,
-      days,
-      time,
-      telegram: telegram.replace('@', ''),
-      price: parsedPrice,
-      distanceKm: distanceKm ?? estimateDistance(from, to),
-      isPeak: peak,
-    });
-    setSuccess(true);
-    setFrom('');
-    setTo('');
-    setTime('08:00');
-    setPrice('');
-    setTimeout(() => setSuccess(false), 3000);
+    if (!canSubmit || parsedPrice === null || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await addRide({
+        from,
+        to,
+        days,
+        time,
+        telegram: telegram.replace('@', ''),
+        price: parsedPrice,
+        distanceKm: distanceKm ?? estimateDistance(from, to),
+        isPeak: peak,
+        vehicleId: selectedVehicleId || undefined,
+      });
+      setSuccess(true);
+      setFrom('');
+      setTo('');
+      setTime('08:00');
+      setPrice('');
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось опубликовать поездку на сервере';
+      setSubmitError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -97,6 +140,12 @@ export default function OfferRideScreen() {
       <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
         Создать поездку
       </Typography>
+
+      {submitError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSubmitError(null)}>
+          {submitError}
+        </Alert>
+      )}
 
       {success && (
         <Paper
@@ -264,6 +313,32 @@ export default function OfferRideScreen() {
             </Button>
           </Paper>
 
+          {vehicles.length > 0 && (
+            <FormControl fullWidth>
+              <InputLabel id="offer-vehicle-label">Автомобиль</InputLabel>
+              <Select
+                labelId="offer-vehicle-label"
+                value={selectedVehicleId}
+                label="Автомобиль"
+                onChange={(e) => setSelectedVehicleId(e.target.value)}
+                startAdornment={
+                  <InputAdornment position="start">
+                    <DirectionsCarIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                  </InputAdornment>
+                }
+              >
+                <MenuItem value="">
+                  <em>Без автомобиля</em>
+                </MenuItem>
+                {vehicles.map((v) => (
+                  <MenuItem key={v.id} value={v.id}>
+                    {v.brand} ({v.license_plate}){v.color ? ` • ${v.color}` : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
           <TextField
             fullWidth
             label="Ваш Telegram (@username)"
@@ -286,10 +361,11 @@ export default function OfferRideScreen() {
             fullWidth
             variant="contained"
             size="large"
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSubmitting}
+            startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : null}
             sx={{ py: 1.2, fontSize: '1rem' }}
           >
-            Опубликовать поездку
+            {isSubmitting ? 'Публикация на сервере...' : 'Опубликовать поездку'}
           </Button>
         </Stack>
       </Box>

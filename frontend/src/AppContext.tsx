@@ -138,27 +138,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addRide = useCallback(
     async (rideData: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName'>): Promise<void> => {
       if (!user) {
-        return;
+        throw new Error('Для публикации поездки необходимо авторизоваться');
+      }
+
+      const payload: Record<string, unknown> = {
+        from: rideData.from,
+        to: rideData.to,
+        time: rideData.time,
+        departure_time: rideData.time,
+        price: rideData.price,
+        base_price: rideData.price,
+        total_seats: rideData.totalSeats || 4,
+      };
+
+      if (rideData.vehicleId) {
+        payload.vehicle_id = rideData.vehicleId;
       }
 
       try {
-        const payload = {
-          from: rideData.from,
-          to: rideData.to,
-          time: rideData.time,
-          departure_time: rideData.time,
-          price: rideData.price,
-          base_price: rideData.price,
-          total_seats: 4,
-        };
         const response = await api.post<{ message: string; ride: BackendRide }>('/api/rides', payload);
         if (response?.ride) {
           const newRide = mapBackendRideToRide(response.ride);
           setRides((prev) => [newRide, ...prev]);
           return;
         }
-      } catch {
-        // Сохраняем локально при сетевой ошибке
+      } catch (err: unknown) {
+        // Локальное добавление поездки при сетевой ошибке для сохранения непрерывности UX
+        const fallbackRide: Ride = {
+          ...rideData,
+          id: `r_${Date.now()}`,
+          createdAt: Date.now(),
+          driverId: user.id,
+          driverName: user.name,
+          status: 'scheduled',
+        };
+        setRides((prev) => [fallbackRide, ...prev]);
+        throw err;
       }
 
       const fallbackRide: Ride = {
@@ -167,6 +182,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         createdAt: Date.now(),
         driverId: user.id,
         driverName: user.name,
+        status: 'scheduled',
       };
       setRides((prev) => [fallbackRide, ...prev]);
     },
