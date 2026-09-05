@@ -383,17 +383,32 @@ export default function ProfileScreen() {
         )}
       </Paper>
 
-      <Button
-        fullWidth
-        variant="outlined"
-        color="error"
-        size="large"
-        startIcon={<LogoutIcon />}
-        onClick={logout}
-        sx={{ py: 1.2 }}
-      >
-        Выйти
-      </Button>
+      <Stack spacing={1.5} sx={{ mt: 2 }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          color="secondary"
+          size="medium"
+          onClick={() => {
+            window.location.hash = 'admin';
+          }}
+          sx={{ py: 1, textTransform: 'none' }}
+        >
+          Панель администратора (/admin)
+        </Button>
+
+        <Button
+          fullWidth
+          variant="outlined"
+          color="error"
+          size="large"
+          startIcon={<LogoutIcon />}
+          onClick={logout}
+          sx={{ py: 1.2 }}
+        >
+          Выйти
+        </Button>
+      </Stack>
     </Box>
   );
 }

@@ -4,6 +4,7 @@
  */
 
 const TOKEN_KEY = 'auth_token';
+const ADMIN_KEY_STORAGE = 'adminKey';
 
 /**
  * Получение сохраненного JWT-токена из локального хранилища браузера
@@ -25,6 +26,28 @@ export function setAuthToken(token: string): void {
  */
 export function removeAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+/**
+ * Получение ключа администратора из сессионного хранилища
+ */
+export function getAdminKey(): string | null {
+  return sessionStorage.getItem(ADMIN_KEY_STORAGE);
+}
+
+/**
+ * Сохранение ключа администратора в сессионное хранилище
+ * @param key - Ключ администратора (30 символов)
+ */
+export function setAdminKey(key: string): void {
+  sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+}
+
+/**
+ * Удаление ключа администратора из сессионного хранилища
+ */
+export function removeAdminKey(): void {
+  sessionStorage.removeItem(ADMIN_KEY_STORAGE);
 }
 
 /**
@@ -56,11 +79,16 @@ async function extractErrorMessage(response: Response): Promise<string> {
 }
 
 /**
- * Формирование заголовков запроса с добавлением авторизационного токена
+ * Формирование заголовков запроса с добавлением авторизационного токена и ключа администратора
+ * @param endpoint - URL адрес запроса
  * @param customHeaders - Пользовательские заголовки
  * @param isFormData - Флаг передачи данных формы (multipart)
  */
-function buildRequestHeaders(customHeaders?: HeadersInit, isFormData: boolean = false): Headers {
+function buildRequestHeaders(
+  endpoint: string,
+  customHeaders?: HeadersInit,
+  isFormData: boolean = false
+): Headers {
   const headers = new Headers(customHeaders);
   if (!isFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
@@ -68,6 +96,12 @@ function buildRequestHeaders(customHeaders?: HeadersInit, isFormData: boolean = 
   const token = getAuthToken();
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+  if (endpoint.includes('/api/admin')) {
+    const adminKey = getAdminKey();
+    if (adminKey && !headers.has('X-Admin-Key')) {
+      headers.set('X-Admin-Key', adminKey);
+    }
   }
   return headers;
 }
@@ -84,7 +118,7 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 export async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { body, headers, ...restOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  const requestHeaders = buildRequestHeaders(headers, isFormData);
+  const requestHeaders = buildRequestHeaders(endpoint, headers, isFormData);
 
   const config: RequestInit = {
     ...restOptions,
