@@ -142,7 +142,7 @@ function AppContent() {
         }}
       >
         {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}
-        {tab === 'offer' && <OfferRideScreen />}
+        {tab === 'offer' && <OfferRideScreen onNavigateToProfile={() => setTab('profile')} />}
         {tab === 'trips' && <MyTripsScreen />}
         {tab === 'profile' && <ProfileScreen />}
       </Container>

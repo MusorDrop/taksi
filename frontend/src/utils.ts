@@ -176,14 +176,21 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
 
   const price = Number(backendRide.base_price || 0);
   const passengerIds = Array.isArray(backendRide.passenger_ids) ? backendRide.passenger_ids : [];
-  const currentPrice = backendRide.current_price !== undefined && backendRide.current_price !== null
-    ? Number(backendRide.current_price)
-    : Math.ceil(price / Math.max(passengerIds.length, 1));
+  // Отмена Split Fare: цена строго фиксированная (за 1 место)
+  const currentPrice = price;
+
+  const telegramHandle = backendRide.driver_username
+    ? backendRide.driver_username.replace(/^@/, '')
+    : (backendRide.driver_phone
+      ? backendRide.driver_phone.replace('+', '')
+      : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'));
 
   return {
     id: backendRide.id,
     driverId: backendRide.driver_id,
     driverName: backendRide.driver_name || 'Водитель',
+    driverUsername: backendRide.driver_username || null,
+    driverPhone: backendRide.driver_phone || null,
     driverAvatarUrl: backendRide.driver_avatar_url || null,
     from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
     to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
@@ -192,12 +199,11 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     departure_time: backendRide.departure_time,
     departureTime: backendRide.departure_time,
     time,
-    telegram: backendRide.driver_phone
-      ? backendRide.driver_phone.replace('+', '')
-      : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'),
+    telegram: telegramHandle,
     price,
     currentPrice,
     passengerIds,
+    passengers: Array.isArray(backendRide.passengers) ? backendRide.passengers : [],
     distanceKm: Number(backendRide.distance_km ?? backendRide.distanceKm ?? 5.0),
     isPeak: Boolean(backendRide.is_peak ?? backendRide.isPeak),
     createdAt: backendRide.created_at ? new Date(backendRide.created_at).getTime() : Date.now(),
@@ -205,6 +211,10 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     totalSeats: backendRide.total_seats,
     vehicleId: backendRide.vehicle_id || null,
     status: backendRide.status || 'scheduled',
+    rideType: backendRide.ride_type || 'one_off',
+    ride_type: backendRide.ride_type || 'one_off',
+    regularDays: backendRide.regular_days || null,
+    regular_days: backendRide.regular_days || null,
     averageRating: backendRide.average_rating ? Number(backendRide.average_rating) : null,
   };
 }

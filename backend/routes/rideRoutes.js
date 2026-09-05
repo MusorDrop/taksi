@@ -16,4 +16,10 @@ router.post('/:id/join', authenticateToken, rideController.joinRide);
 // Отмена участия пассажира в поездке
 router.post('/:id/leave', authenticateToken, rideController.leaveRide);
 
+// Редактирование поездки создателем
+router.patch('/:id', authenticateToken, rideController.updateRide);
+
+// Исключение пассажира водителем
+router.delete('/:id/passengers/:passengerId', authenticateToken, rideController.kickPassenger);
+
 module.exports = router;
