@@ -1,8 +1,20 @@
 import type { DayKey } from './types';
 import { DAY_SHORT } from './types';
 
-export const PEAK_START = 8 * 60;
-export const PEAK_END = 9 * 60 + 30;
+// Morning campus rush: 08:00–09:30
+export const PEAK_MORNING_START = 8 * 60;
+export const PEAK_MORNING_END = 9 * 60 + 30;
+// Evening campus rush: 17:30–19:00
+export const PEAK_EVENING_START = 17 * 60 + 30;
+export const PEAK_EVENING_END = 19 * 60;
+
+// Used by the AI recommendation when no route distance has been resolved yet
+// (e.g. the "Откуда"/"Куда" fields are still empty).
+export const AI_DEFAULT_BASE_PRICE = 150;
+// Simulated traffic/demand surge applied during peak windows.
+export const AI_PEAK_SURGE_MULTIPLIER = 1.3;
+// Recommendations are rounded to a clean, human-friendly step.
+export const AI_PRICE_ROUNDING_STEP = 5;
 
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
@@ -11,7 +23,9 @@ export function timeToMinutes(time: string): number {
 
 export function isPeakTime(time: string): boolean {
   const mins = timeToMinutes(time);
-  return mins >= PEAK_START && mins <= PEAK_END;
+  const isMorningPeak = mins >= PEAK_MORNING_START && mins <= PEAK_MORNING_END;
+  const isEveningPeak = mins >= PEAK_EVENING_START && mins <= PEAK_EVENING_END;
+  return isMorningPeak || isEveningPeak;
 }
 
 export function estimateDistance(from: string, to: string): number {
@@ -22,14 +36,24 @@ export function estimateDistance(from: string, to: string): number {
   return Math.round((base + seed * 0.8) * 10) / 10;
 }
 
-export function calculatePrice(distanceKm: number, time: string): number {
-  const baseFare = 1.0;
-  const perKm = 0.4;
-  let price = baseFare + distanceKm * perKm;
-  if (isPeakTime(time)) {
-    price *= 1.3;
-  }
-  return Math.round(price * 100) / 100;
+function roundToStep(value: number, step: number): number {
+  return Math.round(value / step) * step;
+}
+
+/**
+ * AI smart price recommendation for drivers.
+ *
+ * - Base fare comes from the resolved route distance (6₽/km).
+ * - Falls back to a flat AI_DEFAULT_BASE_PRICE while the route hasn't resolved
+ *   to a distance yet (e.g. "Откуда"/"Куда" not filled in).
+ * - During simulated peak-hour traffic, a surge multiplier is applied.
+ * - The result is always rounded to a clean step for a nicer-looking suggestion.
+ */
+export function getAiRecommendedPrice(distanceKm: number | null | undefined, time: string): number {
+  const baseFare =
+    distanceKm && distanceKm > 0 ? distanceKm * 6 : AI_DEFAULT_BASE_PRICE;
+  const withSurge = isPeakTime(time) ? baseFare * AI_PEAK_SURGE_MULTIPLIER : baseFare;
+  return roundToStep(withSurge, AI_PRICE_ROUNDING_STEP);
 }
 
 export function formatDays(days: DayKey[]): string {
