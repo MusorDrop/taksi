@@ -6,9 +6,16 @@ const { JWT_SECRET } = require('../middleware/authMiddleware');
 /**
  * Санитизация объекта пользователя для безопасного ответа клиенту
  * @param {object} user - Запись пользователя из базы данных
+ * @param {number|null} [averageRating=null] - Рассчитанный средний рейтинг пользователя
  * @returns {object} Профиль пользователя без пароля
  */
-function formatUserProfile(user) {
+function formatUserProfile(user, averageRating = null) {
+    const avg = averageRating !== null && averageRating !== undefined
+        ? Number(averageRating)
+        : (user.average_rating !== null && user.average_rating !== undefined
+            ? Number(user.average_rating)
+            : (user.rating !== null && user.rating !== undefined ? Number(user.rating) : null));
+
     return {
         id: user.id,
         username: user.username,
@@ -16,7 +23,8 @@ function formatUserProfile(user) {
         last_name: user.last_name,
         phone: user.phone,
         role: user.role,
-        rating: user.rating !== null ? Number(user.rating) : null,
+        rating: avg,
+        average_rating: avg,
         is_verified: user.is_verified,
         emergency_contact: user.emergency_contact,
         preferences: user.preferences,
@@ -187,14 +195,31 @@ async function getProfile(req, res) {
     }
 
     try {
-        const query = 'SELECT * FROM users WHERE id = $1';
+        const query = `
+            SELECT 
+                u.*,
+                (SELECT ROUND(AVG(rating)::numeric, 2) FROM reviews WHERE reviewee_id = u.id) AS average_rating,
+                (SELECT COUNT(*)::int FROM reviews WHERE reviewee_id = u.id) AS reviews_count
+            FROM users u
+            WHERE u.id = $1
+        `;
         const result = await pool.query(query, [req.user.id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
 
-        return res.json({ user: formatUserProfile(result.rows[0]) });
+        const userRow = result.rows[0];
+        const averageRating = userRow.average_rating !== null && userRow.average_rating !== undefined
+            ? Number(userRow.average_rating)
+            : null;
+        const formattedUser = formatUserProfile(userRow, averageRating);
+
+        return res.json({
+            user: formattedUser,
+            average_rating: averageRating,
+            reviews_count: userRow.reviews_count || 0
+        });
     } catch (err) {
         console.error('Ошибка получения профиля:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
