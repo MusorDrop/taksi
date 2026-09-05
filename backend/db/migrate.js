@@ -1,6 +1,7 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
 const fs = require('fs');
-const path = require('path');
 const pool = require('./index');
 
 /**
@@ -30,18 +31,6 @@ async function runMigrations() {
                 VALUES ('001_initial_schema.sql') 
                 ON CONFLICT (version) DO NOTHING;
             `);
-
-            const colCheck = await client.query(`
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'is_blocked';
-            `);
-            if (colCheck.rows.length > 0) {
-                await client.query(`
-                    INSERT INTO schema_migrations (version) 
-                    VALUES ('002_admin_and_avatars.sql') 
-                    ON CONFLICT (version) DO NOTHING;
-                `);
-            }
         }
 
         const appliedRes = await client.query('SELECT version FROM schema_migrations;');
