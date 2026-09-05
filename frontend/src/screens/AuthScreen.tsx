@@ -6,13 +6,15 @@ import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import InputAdornment from '@mui/material/InputAdornment';
 import CircularProgress from '@mui/material/CircularProgress';
+import { useTheme } from '@mui/material/styles';
 import PersonIcon from '@mui/icons-material/Person';
 import LockIcon from '@mui/icons-material/Lock';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import { useApp } from '../AppContext';
+import logoImg from '../assets/logo.jpeg';
 
 export default function AuthScreen() {
   const { login } = useApp();
+  const theme = useTheme();
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,16 +38,20 @@ export default function AuthScreen() {
         px: 2,
         pb: 4,
         pt: 'env(safe-area-inset-top)',
-        background: 'linear-gradient(160deg, #1565c0 0%, #1976d2 40%, #42a5f5 100%)',
+        background:
+          theme.palette.mode === 'dark'
+            ? 'linear-gradient(160deg, #0b1e33 0%, #102a4a 40%, #1c3f66 100%)'
+            : 'linear-gradient(160deg, #1565c0 0%, #1976d2 40%, #42a5f5 100%)',
       }}
     >
       <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto' }}>
         <Stack spacing={1} alignItems="center" sx={{ mb: 5, mt: -4 }}>
           <Box
             sx={{
-              width: 72,
-              height: 72,
+              width: 88,
+              height: 88,
               borderRadius: '50%',
+              overflow: 'hidden',
               bgcolor: 'rgba(255,255,255,0.15)',
               display: 'flex',
               alignItems: 'center',
@@ -54,10 +60,14 @@ export default function AuthScreen() {
               border: '1px solid rgba(255,255,255,0.2)',
             }}
           >
-            <DirectionsCarIcon sx={{ fontSize: 36, color: 'white' }} />
+            <img
+              src={logoImg}
+              alt="Попутка logo"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
           </Box>
           <Typography variant="h4" sx={{ color: 'white', fontWeight: 700, letterSpacing: '-0.5px' }}>
-            CampusRide
+            Попутка
           </Typography>
           <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
             Делитесь поездками в кампус и экономьте вместе

@@ -5,14 +5,19 @@ import Avatar from '@mui/material/Avatar';
 import Paper from '@mui/material/Paper';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import SendIcon from '@mui/icons-material/Send';
 import { useApp } from '../AppContext';
+import { useThemeMode } from '../ThemeModeContext';
 
 export default function ProfileScreen() {
   const { user, logout, rides, passengerRideIds } = useApp();
+  const { mode, toggleTheme } = useThemeMode();
 
   if (!user) return null;
 
@@ -76,6 +81,20 @@ export default function ProfileScreen() {
           </Typography>
         </Paper>
       </Stack>
+
+      <Divider sx={{ my: 3 }} />
+
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+        <FormControlLabel
+          control={<Switch checked={mode === 'dark'} onChange={toggleTheme} />}
+          label={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <DarkModeIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+              <span>Тёмная тема</span>
+            </Stack>
+          }
+        />
+      </Paper>
 
       <Divider sx={{ my: 3 }} />
 

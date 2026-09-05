@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import GlobalStyles from '@mui/material/GlobalStyles';
-import theme from './theme';
+import type { PaletteMode } from '@mui/material';
+import createAppTheme from './theme';
+import { ThemeModeContext } from './ThemeModeContext';
 import { AppProvider, useApp } from './AppContext';
 import BottomNav from './components/BottomNav';
 import AuthScreen from './screens/AuthScreen';
@@ -73,15 +75,45 @@ function AppContent() {
   );
 }
 
+function ThemeModeProvider({ children }: { children: ReactNode }) {
+  const [mode, setMode] = useState<PaletteMode>(() => {
+    try {
+      return localStorage.getItem('theme-mode') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  const theme = useMemo(() => createAppTheme(mode), [mode]);
+
+  const toggleTheme = () => {
+    setMode((prev) => {
+      const next: PaletteMode = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem('theme-mode', next);
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
+  return (
+    <ThemeModeContext.Provider value={{ mode, toggleTheme }}>
+      <ThemeProvider theme={theme}>{children}</ThemeProvider>
+    </ThemeModeContext.Provider>
+  );
+}
+
 function App() {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeModeProvider>
       <CssBaseline />
       {globalStyles}
       <AppProvider>
         <AppContent />
       </AppProvider>
-    </ThemeProvider>
+    </ThemeModeProvider>
   );
 }
 
