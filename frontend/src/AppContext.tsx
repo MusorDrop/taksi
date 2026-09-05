@@ -18,7 +18,7 @@ export interface AppContextValue {
   updateRide: (rideId: string, payload: Record<string, unknown>) => Promise<void>;
   kickPassenger: (rideId: string, passengerId: string) => Promise<void>;
   passengerRideIds: string[];
-  joinRide: (rideId: string) => Promise<void> | void;
+  joinRide: (rideId: string, selectedDay?: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
 }
 
@@ -241,7 +241,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [rides, user]);
 
-  const joinRide = useCallback(async (rideId: string): Promise<void> => {
+  const joinRide = useCallback(async (rideId: string, selectedDay?: string): Promise<void> => {
     // 1. Мгновенное оптимистичное обновление списка забронированных поездок пассажира
     setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
 
@@ -254,12 +254,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!currentPassengers.includes(myId)) {
           currentPassengers.push(myId);
         }
+        const currentPassengerObjs = r.passengers ? [...r.passengers] : [];
+        if (!currentPassengerObjs.some((p) => p.id === myId)) {
+          currentPassengerObjs.push({
+            id: myId,
+            name: user?.name,
+            username: user?.telegram,
+            telegram: user?.telegram,
+            phone: user?.phone,
+            avatar_url: user?.avatar_url,
+            selected_day: selectedDay || null,
+          });
+        }
         const updatedSeats = Math.max(0, (r.availableSeats ?? 1) - 1);
         return {
           ...r,
           availableSeats: updatedSeats,
           currentPrice: r.price,
           passengerIds: currentPassengers,
+          passengers: currentPassengerObjs,
         };
       }),
     );
@@ -271,7 +284,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         available_seats?: number;
         current_price?: number;
         passenger_ids?: string[];
-      }>(`/api/rides/${rideId}/join`);
+        passengers?: PassengerInfo[];
+      }>(`/api/rides/${rideId}/join`, selectedDay ? { selected_day: selectedDay } : undefined);
 
       if (response) {
         setRides((prev) =>
@@ -281,11 +295,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ? response.available_seats
               : r.availableSeats;
             const updatedPassengerIds = response.passenger_ids ?? r.passengerIds;
+            const updatedPassengers = response.passengers ?? r.passengers;
             return {
               ...r,
               availableSeats: updatedSeats,
               currentPrice: r.price,
               passengerIds: updatedPassengerIds,
+              passengers: updatedPassengers,
             };
           }),
         );
@@ -294,6 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : 'Ошибка присоединения к поездке';
       setRidesError(message);
       fetchRides();
+      throw err;
     }
   }, [user, fetchRides]);
 

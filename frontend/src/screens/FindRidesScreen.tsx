@@ -284,7 +284,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               ride={ride}
               isPassenger={passengerRideIds.includes(ride.id) || Boolean(user?.id && ride.passengerIds?.includes(user.id))}
               isDriver={Boolean(user?.id && ride.driverId === user.id)}
-              onJoin={() => joinRide(ride.id)}
+              onJoin={(selectedDay) => joinRide(ride.id, selectedDay)}
               onLeave={() => leaveRide(ride.id)}
             />
           ))}

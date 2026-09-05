@@ -29,6 +29,7 @@ export interface PassengerInfo {
   telegram?: string;
   phone?: string | null;
   avatar_url?: string | null;
+  selected_day?: string | null;
 }
 
 export interface User {
