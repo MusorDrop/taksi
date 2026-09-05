@@ -57,7 +57,7 @@ async function registerUser({ username, password, firstName, lastName, phone, ro
     const query = `
         INSERT INTO users (username, password_hash, first_name, last_name, phone, role)
         VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
+        RETURNING id, username, first_name, last_name, phone, role, rating, is_verified, emergency_contact, preferences, created_at
     `;
     const values = [username, passwordHash, firstName, lastName, phone, role];
     const result = await pool.query(query, values);
@@ -85,14 +85,13 @@ async function register(req, res) {
     }
 
     // Проверка пароля на пустоту и минимальную длину (не менее 8 символов)
-    if (typeof password !== 'string' || !password.trim()) {
+    if (typeof password !== 'string' || password.length === 0) {
         return res.status(400).json({
             error: 'Пароль не может быть пустым'
         });
     }
 
-    const trimmedPassword = password.trim();
-    if (trimmedPassword.length < 8) {
+    if (password.length < 8) {
         return res.status(400).json({
             error: 'Пароль должен содержать как минимум 8 символов'
         });
@@ -110,7 +109,7 @@ async function register(req, res) {
     try {
         const newUser = await registerUser({
             username: trimmedUsername,
-            password: trimmedPassword,
+            password: password,
             firstName: first_name ? first_name.trim() : trimmedUsername,
             lastName: last_name ? last_name.trim() : null,
             phone: phone ? phone.trim() : null,
@@ -150,9 +149,8 @@ async function login(req, res) {
     }
 
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
-    const trimmedPassword = typeof password === 'string' ? password.trim() : '';
 
-    if (!trimmedUsername || !trimmedPassword) {
+    if (!trimmedUsername || typeof password !== 'string' || password.length === 0) {
         return res.status(400).json({
             error: 'Поля username и password обязательны для заполнения'
         });
@@ -163,14 +161,14 @@ async function login(req, res) {
         const result = await pool.query(userQuery, [trimmedUsername]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Пользователь не найден' });
+            return res.status(401).json({ error: 'Неверный логин или пароль' });
         }
 
         const user = result.rows[0];
-        const isMatch = await bcrypt.compare(trimmedPassword, user.password_hash);
+        const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
-            return res.status(401).json({ error: 'Неверный пароль' });
+            return res.status(401).json({ error: 'Неверный логин или пароль' });
         }
 
         const token = createToken(user);
@@ -197,7 +195,17 @@ async function getProfile(req, res) {
     try {
         const query = `
             SELECT 
-                u.*,
+                u.id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                u.phone,
+                u.role,
+                u.rating,
+                u.is_verified,
+                u.emergency_contact,
+                u.preferences,
+                u.created_at,
                 (SELECT ROUND(AVG(rating)::numeric, 2) FROM reviews WHERE reviewee_id = u.id) AS average_rating,
                 (SELECT COUNT(*)::int FROM reviews WHERE reviewee_id = u.id) AS reviews_count
             FROM users u
