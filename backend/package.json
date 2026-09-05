@@ -1,0 +1,24 @@
+{
+  "name": "taksi",
+  "version": "1.0.0",
+  "description": "Платформа для совместных поездок студентов (райдшеринг). Позволяет студентам с автомобилями публиковать свои регулярные маршруты, а пассажирам — находить попутчиков. Система автоматически подбирает оптимальные совпадения по времени, маршруту и рейтингу, а также рассчитывает справедливую стоимость поездки. Проект включает в себя AI-интеграцию для «умного матчинга» пассажиров и водителей с гибкими окнами по времени.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MusorDrop/taksi.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MusorDrop/taksi/issues"
+  },
+  "homepage": "https://github.com/MusorDrop/taksi#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
