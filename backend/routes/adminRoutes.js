@@ -4,8 +4,24 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 
 const router = express.Router();
 
+// Регулярное выражение для валидации UUID
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Защита всех эндпоинтов администратора
 router.use(adminMiddleware);
+
+// Глобальная валидация параметра :id для всех маршрутов администратора (защита от SQL/22P02 ошибок)
+router.param('id', (req, res, next, id) => {
+    if (!UUID_REGEX.test(id)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора (ожидается UUID)' });
+    }
+    next();
+});
+
+// Допустимые роли пользователей
+const ALLOWED_ROLES = ['driver', 'passenger', 'both'];
+// Допустимые статусы поездок
+const ALLOWED_RIDE_STATUSES = ['scheduled', 'in_progress', 'completed', 'cancelled'];
 
 // --- ПОЛЬЗОВАТЕЛИ (USERS) ---
 
@@ -41,6 +57,11 @@ router.get('/users/:id', async (req, res) => {
 router.patch('/users/:id/block', async (req, res) => {
     const { id } = req.params;
     const { is_blocked } = req.body;
+
+    if (is_blocked !== undefined && typeof is_blocked !== 'boolean') {
+        return res.status(400).json({ error: 'Поле is_blocked должно быть булевым значением (true/false)' });
+    }
+
     try {
         let query;
         let values;
@@ -48,7 +69,7 @@ router.patch('/users/:id/block', async (req, res) => {
             query = 'UPDATE users SET is_blocked = $1 WHERE id = $2 RETURNING id, username, is_blocked';
             values = [is_blocked, id];
         } else {
-            query = 'UPDATE users SET is_blocked = NOT is_blocked WHERE id = $1 RETURNING id, username, is_blocked';
+            query = 'UPDATE users SET is_blocked = NOT COALESCE(is_blocked, false) WHERE id = $1 RETURNING id, username, is_blocked';
             values = [id];
         }
         const result = await pool.query(query, values);
@@ -64,6 +85,17 @@ router.patch('/users/:id/block', async (req, res) => {
 router.patch('/users/:id', async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, phone, role, is_blocked } = req.body;
+
+    if (role !== undefined && role !== null && !ALLOWED_ROLES.includes(role)) {
+        return res.status(400).json({
+            error: "Недопустимая роль пользователя. Разрешены: 'driver', 'passenger', 'both'"
+        });
+    }
+
+    if (is_blocked !== undefined && is_blocked !== null && typeof is_blocked !== 'boolean') {
+        return res.status(400).json({ error: 'Поле is_blocked должно быть булевым значением (true/false)' });
+    }
+
     try {
         const query = `
             UPDATE users
@@ -150,6 +182,25 @@ router.get('/rides/:id', async (req, res) => {
 router.patch('/rides/:id', async (req, res) => {
     const { id } = req.params;
     const { status, base_price, available_seats, total_seats, departure_time } = req.body;
+
+    if (status !== undefined && status !== null && !ALLOWED_RIDE_STATUSES.includes(status)) {
+        return res.status(400).json({
+            error: "Недопустимый статус поездки. Разрешены: 'scheduled', 'in_progress', 'completed', 'cancelled'"
+        });
+    }
+
+    if (base_price !== undefined && base_price !== null && (isNaN(Number(base_price)) || Number(base_price) < 0)) {
+        return res.status(400).json({ error: 'Базовая цена должна быть неотрицательным числом' });
+    }
+
+    if (available_seats !== undefined && available_seats !== null && (isNaN(Number(available_seats)) || Number(available_seats) < 0)) {
+        return res.status(400).json({ error: 'Количество свободных мест должно быть неотрицательным числом' });
+    }
+
+    if (total_seats !== undefined && total_seats !== null && (isNaN(Number(total_seats)) || Number(total_seats) <= 0)) {
+        return res.status(400).json({ error: 'Общее количество мест должно быть положительным числом' });
+    }
+
     try {
         const query = `
             UPDATE rides
@@ -161,7 +212,14 @@ router.patch('/rides/:id', async (req, res) => {
             WHERE id = $6
             RETURNING *
         `;
-        const values = [status ?? null, base_price !== undefined ? Number(base_price) : null, available_seats !== undefined ? Number(available_seats) : null, total_seats !== undefined ? Number(total_seats) : null, departure_time ?? null, id];
+        const values = [
+            status ?? null,
+            base_price !== undefined && base_price !== null ? Number(base_price) : null,
+            available_seats !== undefined && available_seats !== null ? Number(available_seats) : null,
+            total_seats !== undefined && total_seats !== null ? Number(total_seats) : null,
+            departure_time ?? null,
+            id
+        ];
         const result = await pool.query(query, values);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Поездка не найдена' });
         res.json({ message: 'Поездка обновлена', ride: result.rows[0] });
@@ -235,7 +293,12 @@ router.patch('/vehicles/:id', async (req, res) => {
             WHERE id = $4
             RETURNING *
         `;
-        const values = [brand ?? null, color ?? null, license_plate ? license_plate.toUpperCase() : null, id];
+        const values = [
+            brand ? String(brand).trim() : null,
+            color ? String(color).trim() : null,
+            license_plate ? String(license_plate).trim().toUpperCase() : null,
+            id
+        ];
         const result = await pool.query(query, values);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Автомобиль не найден' });
         res.json({ message: 'Данные автомобиля обновлены', vehicle: result.rows[0] });

@@ -15,9 +15,11 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localh
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
 
-// Раздача статических файлов (аватарки пользователей)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(express.static('uploads'));
+// Раздача статических файлов (аватарки пользователей) с безопасными параметрами
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+    dotfiles: 'ignore',
+    index: false
+}));
 
 // Роуты API
 const authRoutes = require('./routes/authRoutes');
