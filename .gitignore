@@ -22,6 +22,7 @@ scratch/
 # Antigravity Project Scaffolding
 .agents/
 GEMINI.md
+PLAN.md
 repomix.config.json
 .repomixignore
 
