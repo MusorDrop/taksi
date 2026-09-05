@@ -559,7 +559,8 @@ async function getRides(req, res) {
                             'username', pu.username,
                             'telegram', pu.username,
                             'phone', pu.phone,
-                            'avatar_url', pu.avatar_url
+                            'avatar_url', pu.avatar_url,
+                            'selected_day', m.selected_day
                         )
                     )
                     FROM matches m
@@ -604,13 +605,15 @@ async function joinRide(req, res) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
+    const selectedDay = req.body?.selected_day || req.body?.selectedDay || null;
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
         // Проверка существования поездки
         const rideCheck = await client.query(
-            'SELECT id, driver_id, status, available_seats, total_seats, base_price FROM rides WHERE id = $1 FOR UPDATE',
+            'SELECT id, driver_id, status, available_seats, total_seats, base_price, ride_type, regular_days FROM rides WHERE id = $1 FOR UPDATE',
             [rideId]
         );
         if (rideCheck.rows.length === 0) {
@@ -656,11 +659,11 @@ async function joinRide(req, res) {
 
         // Создание записи в таблице matches
         const insertMatchQuery = `
-            INSERT INTO matches (ride_id, passenger_id, agreed_price, status)
-            VALUES ($1, $2, $3, 'accepted')
+            INSERT INTO matches (ride_id, passenger_id, agreed_price, status, selected_day)
+            VALUES ($1, $2, $3, 'accepted', $4)
             RETURNING *
         `;
-        const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price]);
+        const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price, selectedDay]);
 
         // Получение актуального списка пассажиров
         const passengersRes = await client.query(`
@@ -671,7 +674,8 @@ async function joinRide(req, res) {
                     'username', pu.username,
                     'telegram', pu.username,
                     'phone', pu.phone,
-                    'avatar_url', pu.avatar_url
+                    'avatar_url', pu.avatar_url,
+                    'selected_day', m.selected_day
                 )
             ) as passengers,
             array_agg(m.passenger_id::text) as passenger_ids
@@ -767,7 +771,8 @@ async function leaveRide(req, res) {
                     'username', pu.username,
                     'telegram', pu.username,
                     'phone', pu.phone,
-                    'avatar_url', pu.avatar_url
+                    'avatar_url', pu.avatar_url,
+                    'selected_day', m.selected_day
                 )
             ) as passengers,
             array_agg(m.passenger_id::text) as passenger_ids
@@ -1012,7 +1017,8 @@ async function updateRide(req, res) {
                     'username', pu.username,
                     'telegram', pu.username,
                     'phone', pu.phone,
-                    'avatar_url', pu.avatar_url
+                    'avatar_url', pu.avatar_url,
+                    'selected_day', m.selected_day
                 )
             ) as passengers,
             array_agg(m.passenger_id::text) as passenger_ids
@@ -1117,7 +1123,8 @@ async function kickPassenger(req, res) {
                     'username', pu.username,
                     'telegram', pu.username,
                     'phone', pu.phone,
-                    'avatar_url', pu.avatar_url
+                    'avatar_url', pu.avatar_url,
+                    'selected_day', m.selected_day
                 )
             ) as passengers,
             array_agg(m.passenger_id::text) as passenger_ids

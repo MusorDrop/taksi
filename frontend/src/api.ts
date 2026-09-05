@@ -167,5 +167,18 @@ export const api = {
 
   delete: <T>(endpoint: string, options?: RequestOptions): Promise<T> =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
+
+  joinRide: <T = unknown>(rideId: string, selectedDay?: string): Promise<T> =>
+    joinRideApi<T>(rideId, selectedDay),
 };
+
+/**
+ * Вызов API для присоединения к поездке с возможностью передачи выбранного дня
+ * @param rideId - Идентификатор поездки
+ * @param selectedDay - Выбранный день для регулярных поездок (опционально)
+ */
+export async function joinRideApi<T = unknown>(rideId: string, selectedDay?: string): Promise<T> {
+  const body = selectedDay ? { selected_day: selectedDay } : undefined;
+  return api.post<T>(`/api/rides/${rideId}/join`, body);
+}
 
