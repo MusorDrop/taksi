@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
     color VARCHAR(50),
     license_plate VARCHAR(20) NOT NULL,
     seats INTEGER NOT NULL DEFAULT 4,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_vehicles_license_plate UNIQUE (license_plate),
+    CONSTRAINT chk_vehicles_seats CHECK (seats >= 1 AND seats <= 8)
 );
 
 -- Таблица поездок
@@ -70,7 +72,8 @@ CREATE TABLE IF NOT EXISTS rides (
     ride_type VARCHAR(20) DEFAULT 'one_off',
     regular_days VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats)
+    CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats),
+    CONSTRAINT chk_rides_base_price CHECK (base_price >= 0)
 );
 
 -- Таблица совпадений (бронирований поездок)
@@ -95,7 +98,8 @@ CREATE TABLE IF NOT EXISTS reviews (
     reviewee_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id)
 );
 
 -- Базовые индексы для ускорения поиска и гео-запросов
@@ -124,6 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_driver_id ON vehicles(driver_id);
 CREATE INDEX IF NOT EXISTS idx_rides_vehicle_id ON rides(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewee_id ON reviews(reviewee_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id ON reviews(reviewer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_ride_reviewer_reviewee ON reviews(ride_id, reviewer_id, reviewee_id);
 
 -- Обеспечение наличия ограничений для ранее созданных таблиц (идемпотентный ALTER)
 DO $$ BEGIN
@@ -143,5 +148,30 @@ DO $$ BEGIN
 EXCEPTION
     WHEN duplicate_object OR duplicate_table THEN null;
 END $$;
+
+DO $$ BEGIN
+    ALTER TABLE vehicles ADD CONSTRAINT uq_vehicles_license_plate UNIQUE (license_plate);
+EXCEPTION
+    WHEN duplicate_object OR duplicate_table THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE vehicles ADD CONSTRAINT chk_vehicles_seats CHECK (seats >= 1 AND seats <= 8);
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE rides ADD CONSTRAINT chk_rides_base_price CHECK (base_price >= 0);
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE reviews ADD CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id);
+EXCEPTION
+    WHEN duplicate_object OR duplicate_table THEN null;
+END $$;
+
 
 

@@ -1,6 +1,5 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-require('dotenv').config();
 const fs = require('fs');
 const pool = require('./index');
 
@@ -47,9 +46,18 @@ async function runMigrations() {
                 const filePath = path.join(migrationsDir, file);
                 const sql = fs.readFileSync(filePath, 'utf8');
 
-                await client.query(sql);
-                await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file]);
-                console.log(`Миграция ${file} успешно применена!`);
+                try {
+                    await client.query('BEGIN');
+                    await client.query(sql);
+                    await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file]);
+                    await client.query('COMMIT');
+                    applied.add(file);
+                    console.log(`Миграция ${file} успешно применена!`);
+                } catch (migrationErr) {
+                    await client.query('ROLLBACK');
+                    console.error(`Ошибка при выполнении миграции ${file}, транзакция откачена:`, migrationErr);
+                    throw migrationErr;
+                }
             } else {
                 console.log(`Миграция ${file} уже применена, пропуск.`);
             }

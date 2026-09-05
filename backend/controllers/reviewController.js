@@ -1,16 +1,5 @@
 const pool = require('../db');
-
-// Регулярное выражение для валидации UUID
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Валидация формата UUID
- * @param {string} id - Проверяемый идентификатор
- * @returns {boolean} true, если строка соответствует формату UUID
- */
-function isValidUuid(id) {
-    return typeof id === 'string' && UUID_REGEX.test(id);
-}
+const { isValidUuid } = require('../utils/validation');
 
 /**
  * Валидация входных данных для создания нового отзыва
@@ -54,8 +43,27 @@ function validateReviewInput(body, reviewerId) {
 }
 
 /**
+ * Проверка участия пользователя в поездке (как водитель или подтвержденный пассажир)
+ * @param {import('pg').PoolClient | import('pg').Pool} db - Клиент БД
+ * @param {string} rideId - ID поездки
+ * @param {string} userId - ID пользователя
+ * @param {string} driverId - ID водителя
+ * @returns {Promise<boolean>}
+ */
+async function isRideParticipant(db, rideId, userId, driverId) {
+    if (userId === driverId) {
+        return true;
+    }
+    const matchRes = await db.query(
+        "SELECT id FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = 'accepted'",
+        [rideId, userId]
+    );
+    return matchRes.rows.length > 0;
+}
+
+/**
  * Пересчет и обновление среднего рейтинга пользователя в таблице users
- * @param {import('pg').Pool} db - Пул подключений к базе данных
+ * @param {import('pg').PoolClient | import('pg').Pool} db - Пул подключений или клиент базы данных
  * @param {string} userId - Идентификатор оцениваемого пользователя
  * @returns {Promise<number|null>} Обновленный средний рейтинг
  */
@@ -100,17 +108,48 @@ async function createReview(req, res) {
 
     const { rideId, revieweeId, rating, comment } = validation.data;
 
+    const client = await pool.connect();
     try {
-        // Проверка существования поездки
-        const rideCheck = await pool.query('SELECT id FROM rides WHERE id = $1', [rideId]);
+        await client.query('BEGIN');
+
+        // Проверка существования поездки и получение driver_id
+        const rideCheck = await client.query('SELECT id, driver_id FROM rides WHERE id = $1', [rideId]);
         if (rideCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });
         }
 
+        const driverId = rideCheck.rows[0].driver_id;
+
         // Проверка существования оцениваемого пользователя
-        const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [revieweeId]);
+        const userCheck = await client.query('SELECT id FROM users WHERE id = $1', [revieweeId]);
         if (userCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Оцениваемый пользователь не найден' });
+        }
+
+        // 🟠-2: Проверка участия автора отзыва в данной поездке
+        const isReviewerParticipant = await isRideParticipant(client, rideId, reviewerId, driverId);
+        if (!isReviewerParticipant) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Оставлять отзыв могут только участники поездки' });
+        }
+
+        // 🟠-4: Проверка участия оцениваемого пользователя в данной поездке
+        const isRevieweeParticipant = await isRideParticipant(client, rideId, revieweeId, driverId);
+        if (!isRevieweeParticipant) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Оцениваемый пользователь не является участником данной поездки' });
+        }
+
+        // Проверка дубликата отзыва (один отзыв от автора конкретному участнику поездки)
+        const duplicateCheck = await client.query(
+            'SELECT id FROM reviews WHERE ride_id = $1 AND reviewer_id = $2 AND reviewee_id = $3',
+            [rideId, reviewerId, revieweeId]
+        );
+        if (duplicateCheck.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Вы уже оставили отзыв об этом участнике для данной поездки' });
         }
 
         // Вставка новой записи в таблицу reviews
@@ -119,11 +158,13 @@ async function createReview(req, res) {
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id, ride_id, reviewer_id, reviewee_id, rating, comment, created_at
         `;
-        const insertRes = await pool.query(insertQuery, [rideId, reviewerId, revieweeId, rating, comment]);
+        const insertRes = await client.query(insertQuery, [rideId, reviewerId, revieweeId, rating, comment]);
         const createdReview = insertRes.rows[0];
 
-        // Пересчет и сохранение среднего рейтинга пользователя
-        const updatedRating = await updateUserAverageRating(pool, revieweeId);
+        // Пересчет и сохранение среднего рейтинга пользователя в транзакции (🟠-1)
+        const updatedRating = await updateUserAverageRating(client, revieweeId);
+
+        await client.query('COMMIT');
 
         return res.status(201).json({
             message: 'Отзыв успешно добавлен',
@@ -131,13 +172,16 @@ async function createReview(req, res) {
             average_rating: updatedRating
         });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Ошибка добавления отзыва:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при создании отзыва' });
+    } finally {
+        client.release();
     }
 }
 
 /**
- * Контроллер получения списка отзывов с опциональной фильтрацией
+ * Контроллер получения списка отзывов с опциональной фильтрацией и пагинацией (🟡-3)
  * GET /api/reviews
  * @param {import('express').Request} req - Запрос Express
  * @param {import('express').Response} res - Ответ Express
@@ -145,10 +189,15 @@ async function createReview(req, res) {
 async function getReviews(req, res) {
     const { user_id, ride_id } = req.query;
 
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+
     try {
         let query = `
             SELECT r.id, r.ride_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
-                   u.username AS reviewer_username, u.first_name AS reviewer_first_name
+                   u.username AS reviewer_username, u.first_name AS reviewer_first_name,
+                   COUNT(*) OVER() AS full_count
             FROM reviews r
             JOIN users u ON u.id = r.reviewer_id
         `;
@@ -175,12 +224,26 @@ async function getReviews(req, res) {
             query += ` WHERE ${conditions.join(' AND ')}`;
         }
 
-        query += ' ORDER BY r.created_at DESC LIMIT 50';
+        params.push(limit);
+        const limitParamIndex = params.length;
+        params.push(offset);
+        const offsetParamIndex = params.length;
+
+        query += ` ORDER BY r.created_at DESC LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`;
 
         const result = await pool.query(query, params);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
+        const reviews = result.rows.map((row) => {
+            const { full_count, ...reviewData } = row;
+            return reviewData;
+        });
+
         return res.json({
-            count: result.rows.length,
-            reviews: result.rows
+            count: reviews.length,
+            total_count: totalCount,
+            page,
+            limit,
+            reviews
         });
     } catch (err) {
         console.error('Ошибка при получении отзывов:', err);
