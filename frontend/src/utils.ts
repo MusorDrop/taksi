@@ -66,6 +66,41 @@ export function formatDays(days: DayKey[]): string {
   return days.map((d) => DAY_SHORT[d]).join(', ');
 }
 
+/**
+ * Форматирование даты отправления в читаемый вид (например, '15 сент.')
+ * @param dateInput - Строка даты, timestamp или объект Date
+ * @returns Отформатированная строка даты
+ */
+export function formatDateString(dateInput?: string | number | Date | null): string {
+  if (!dateInput) {
+    return 'Сегодня';
+  }
+
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(date.getTime())) {
+    return 'Сегодня';
+  }
+
+  return date.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+/**
+ * Определение ключа дня недели поездки на основе времени отправления
+ * @param ride - Объект с временем отправления поездки
+ * @returns Ключ дня недели или null
+ */
+export function getRideDayKey(ride: { departure_time?: string; departureTime?: string }): DayKey | null {
+  const timeVal = ride.departure_time || ride.departureTime;
+  if (!timeVal) return null;
+  const d = new Date(timeVal);
+  if (isNaN(d.getTime())) return null;
+  const dayKeys: DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return dayKeys[d.getDay()] || null;
+}
+
 export function formatPrice(price: number): string {
   return `${price.toFixed(0)} ₽`;
 }
@@ -137,9 +172,7 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
   const minutes = isValidDate ? String(departureDate.getMinutes()).padStart(2, '0') : '00';
   const time = `${hours}:${minutes}`;
 
-  const dayIndex = isValidDate ? departureDate.getDay() : 1;
-  const dayKeys: import('./types').DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const day = dayKeys[dayIndex] || 'Mon';
+  const dateString = formatDateString(isValidDate ? departureDate : new Date());
 
   const price = Number(backendRide.base_price || 0);
   const passengerIds = Array.isArray(backendRide.passenger_ids) ? backendRide.passenger_ids : [];
@@ -154,7 +187,10 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     driverAvatarUrl: backendRide.driver_avatar_url || null,
     from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
     to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
-    days: [day],
+    dateFormatted: dateString,
+    dateString,
+    departure_time: backendRide.departure_time,
+    departureTime: backendRide.departure_time,
     time,
     telegram: backendRide.driver_phone
       ? backendRide.driver_phone.replace('+', '')

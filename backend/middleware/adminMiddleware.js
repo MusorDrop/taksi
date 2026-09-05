@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 /**
  * Регулярное выражение для выявления консольных утилит, ботов и HTTP-библиотек.
  */
@@ -91,37 +93,57 @@ function getAllowedOrigins() {
 }
 
 /**
+ * Регулярное выражение для доверенных локальных источников разработки
+ */
+const LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const LOCAL_HOST_REGEX = /^(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+/**
  * Проверка источника запроса (Origin/Referer) на принадлежность к разрешенным адресам приложения.
+ * Устранена уязвимость Host Header Poisoning и подделки Origin.
  * @param {import('express').Request} req - Объект входящего HTTP-запроса.
  * @returns {boolean} true, если запрос поступил с доверенного веб-клиента.
  */
 function isTrustedOrigin(req) {
     const requestOrigin = extractRequestOrigin(req);
     const host = req.headers.host;
-
-    if (!requestOrigin) {
-        return Boolean(host && (host.includes('localhost') || host.includes('127.0.0.1')));
-    }
-
     const allowedOrigins = getAllowedOrigins();
-    if (allowedOrigins.includes(requestOrigin)) {
-        return true;
+
+    if (requestOrigin) {
+        if (allowedOrigins.includes(requestOrigin)) {
+            return true;
+        }
+        if (LOCAL_ORIGIN_REGEX.test(requestOrigin)) {
+            return true;
+        }
+        return false;
     }
 
-    if (requestOrigin.startsWith('http://localhost:') || requestOrigin.startsWith('http://127.0.0.1:')) {
-        return true;
-    }
-
+    // Если Origin/Referer отсутствует, проверяем строго Host
     if (!host) {
         return false;
     }
 
-    const hostLower = host.toLowerCase();
-    return requestOrigin === `http://${hostLower}` || requestOrigin === `https://${hostLower}`;
+    const hostLower = host.toLowerCase().trim();
+    if (LOCAL_HOST_REGEX.test(hostLower)) {
+        return true;
+    }
+
+    for (const origin of allowedOrigins) {
+        try {
+            const parsed = new URL(origin);
+            if (parsed.host.toLowerCase() === hostLower) {
+                return true;
+            }
+        } catch (_) {}
+    }
+
+    return false;
 }
 
 /**
  * Валидация секретного ключа администратора в заголовке X-Admin-Key.
+ * Устранены атака по времени (Timing Attack) и жестко закодированный ключ по умолчанию.
  * @param {string | undefined} adminKey - Переданный ключ администратора.
  * @returns {{ valid: boolean; status?: number; error?: string }} Результат проверки ключа.
  */
@@ -130,7 +152,16 @@ function validateAdminSecret(adminKey) {
         return { valid: false, status: 401, error: 'Отсутствует заголовок X-Admin-Key' };
     }
 
-    if (typeof adminKey !== 'string' || adminKey.trim().length !== 30) {
+    if (typeof adminKey !== 'string') {
+        return {
+            valid: false,
+            status: 403,
+            error: 'Неверный формат ключа администратора'
+        };
+    }
+
+    const trimmedKey = adminKey.trim();
+    if (trimmedKey.length !== 30) {
         return {
             valid: false,
             status: 403,
@@ -138,8 +169,20 @@ function validateAdminSecret(adminKey) {
         };
     }
 
-    const validSecret = process.env.ADMIN_SECRET || 'poputka_admin_secret_key_30chr';
-    if (adminKey.trim() !== validSecret) {
+    const validSecret = process.env.ADMIN_SECRET;
+    if (!validSecret) {
+        return {
+            valid: false,
+            status: 500,
+            error: 'Конфигурация безопасности сервера не завершена: переменная ADMIN_SECRET не установлена'
+        };
+    }
+
+    // Защита от атак по времени (Timing Attack) с использованием криптографического сравнения постоянного времени
+    const keyHash = crypto.createHash('sha256').update(trimmedKey).digest();
+    const secretHash = crypto.createHash('sha256').update(validSecret.trim()).digest();
+
+    if (!crypto.timingSafeEqual(keyHash, secretHash)) {
         return { valid: false, status: 403, error: 'Неверный ключ администратора' };
     }
 
@@ -149,7 +192,7 @@ function validateAdminSecret(adminKey) {
 /**
  * Middleware для защиты API администратора:
  * 1. Проверяет браузерные заголовки (User-Agent, Sec-Fetch-Mode, Origin/Referer).
- * 2. Проверяет секретный ключ администратора X-Admin-Key (длина 30 символов).
+ * 2. Проверяет секретный ключ администратора X-Admin-Key с защитой от тайминг-атак.
  */
 function adminMiddleware(req, res, next) {
     if (req.method === 'OPTIONS') {
@@ -185,4 +228,3 @@ function adminMiddleware(req, res, next) {
 }
 
 module.exports = adminMiddleware;
-

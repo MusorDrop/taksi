@@ -25,7 +25,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
 import type { Ride } from '../types';
-import { formatDays, formatAvatarUrl } from '../utils';
+import { formatAvatarUrl } from '../utils';
 import { api } from '../api';
 
 interface RideCardProps {
@@ -161,7 +161,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           <Chip
             size="small"
             icon={<EventIcon sx={{ fontSize: 14 }} />}
-            label={formatDays(ride.days)}
+            label={ride.dateFormatted || ride.dateString || 'Сегодня'}
             variant="outlined"
             sx={{ maxWidth: '100%' }}
           />

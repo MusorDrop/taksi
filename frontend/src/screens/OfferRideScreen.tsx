@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type FormEvent } from 'react';
+import { useMemo, useState, useEffect, useRef, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -20,11 +20,23 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import RouteMap from '../components/RouteMap';
 import { useApp } from '../AppContext';
-import { DAY_KEYS, DAY_SHORT, type DayKey, type Vehicle, type VehiclesResponse } from '../types';
-import { estimateDistance, formatPrice, getAiRecommendedPrice, isPeakTime } from '../utils';
+import type { Vehicle, VehiclesResponse } from '../types';
+import { estimateDistance, formatDateString, formatPrice, getAiRecommendedPrice, isPeakTime } from '../utils';
 import { api } from '../api';
+
+/**
+ * Получение текущей даты в формате YYYY-MM-DD для поля ввода даты
+ */
+function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 // Indigo/violet accent palette for the AI recommendation surface — kept local
 // to this screen so the rest of the app's MUI theme (blue) is untouched.
@@ -43,9 +55,9 @@ export default function OfferRideScreen() {
   const { addRide, user } = useApp();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [date, setDate] = useState<string>(getTodayDateString);
   const [time, setTime] = useState('08:00');
   const [telegram, setTelegram] = useState(user?.telegram ?? '');
-  const [days, setDays] = useState<DayKey[]>(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
   const [price, setPrice] = useState<string>('');
   const [success, setSuccess] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -53,23 +65,38 @@ export default function OfferRideScreen() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   // Загрузка доступных автомобилей пользователя для привязки к поездке
   useEffect(() => {
+    const controller = new AbortController();
     let isMounted = true;
+
     async function loadVehicles(): Promise<void> {
       try {
-        const res = await api.get<VehiclesResponse>('/api/vehicles');
+        const res = await api.get<VehiclesResponse>('/api/vehicles', {
+          signal: controller.signal,
+        });
         if (isMounted && res?.vehicles && res.vehicles.length > 0) {
           setVehicles(res.vehicles);
           setSelectedVehicleId(res.vehicles[0].id);
         }
       } catch {
-        // При недоступности бэкенда форма работает без выбора автомобиля
+        // При недоступности бэкенда или отмене запроса форма работает без выбора автомобиля
       }
     }
+
     loadVehicles();
+
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, []);
 
@@ -91,13 +118,7 @@ export default function OfferRideScreen() {
 
   const parsedPrice = price.trim() === '' ? null : Number(price);
   const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
-  const canSubmit = Boolean(from && to && telegram && isPriceValid);
-
-  const toggleDay = (day: DayKey) => {
-    setDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
-    );
-  };
+  const canSubmit = Boolean(from.trim() && to.trim() && telegram.trim() && isPriceValid && date && time);
 
   const handleApplyRecommendation = () => {
     setPrice(String(recommendedPrice));
@@ -110,10 +131,18 @@ export default function OfferRideScreen() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
+      const departureDate = new Date(`${date}T${time}`);
+      const departureIso = !isNaN(departureDate.getTime())
+        ? departureDate.toISOString()
+        : new Date().toISOString();
+
       await addRide({
         from,
         to,
-        days,
+        dateFormatted: formatDateString(departureIso),
+        dateString: formatDateString(departureIso),
+        departure_time: departureIso,
+        departureTime: departureIso,
         time,
         telegram: telegram.replace('@', ''),
         price: parsedPrice,
@@ -121,12 +150,17 @@ export default function OfferRideScreen() {
         isPeak: peak,
         vehicleId: selectedVehicleId || undefined,
       });
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
       setSuccess(true);
       setFrom('');
       setTo('');
+      setDate(getTodayDateString());
       setTime('08:00');
       setPrice('');
-      setTimeout(() => setSuccess(false), 3000);
+      successTimerRef.current = setTimeout(() => {
+        setSuccess(false);
+        successTimerRef.current = null;
+      }, 3000);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось опубликовать поездку на сервере';
       setSubmitError(message);
@@ -200,24 +234,24 @@ export default function OfferRideScreen() {
 
           <RouteMap from={from || 'Точка А'} to={to || 'Точка Б'} />
 
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Активные дни
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-              {DAY_KEYS.map((day) => (
-                <Chip
-                  key={day}
-                  label={DAY_SHORT[day]}
-                  size="small"
-                  color={days.includes(day) ? 'primary' : 'default'}
-                  variant={days.includes(day) ? 'filled' : 'outlined'}
-                  onClick={() => toggleDay(day)}
-                  sx={{ fontWeight: 600, minWidth: 44 }}
-                />
-              ))}
-            </Box>
-          </Box>
+          <TextField
+            fullWidth
+            label="Дата поездки"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            slotProps={{
+              inputLabel: { shrink: true },
+              htmlInput: { min: getTodayDateString() },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarTodayIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
 
           <TextField
             fullWidth

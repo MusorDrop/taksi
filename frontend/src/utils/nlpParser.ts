@@ -1,4 +1,5 @@
 import type { Ride, DayKey } from '../types';
+import { getRideDayKey } from '../utils';
 
 export interface ParsedNlpQuery {
   words: string[];
@@ -94,7 +95,7 @@ function calculateRideScore(ride: Ride, parsedQuery: ParsedNlpQuery): number {
     if (driverLower.includes(word)) score++;
   }
 
-  if (dayFilter && ride.days.includes(dayFilter)) {
+  if (dayFilter && getRideDayKey(ride) === dayFilter) {
     score += 2;
   }
   if (timeFilter && ride.time === timeFilter) {

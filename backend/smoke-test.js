@@ -127,7 +127,6 @@ async function runSmokeTests() {
         // Тест 5: Проверка влияния rate-limiter на обычные запросы
         console.log('\n--- Тест 5: Проверка rate-limiter (не ломает ли обычные запросы) ---');
         try {
-            // Выполняем 10 обычных запросов подряд к /api/health и /api/rides
             let normalRequestsPassed = true;
             for (let i = 0; i < 5; i++) {
                 const healthRes = await fetch(`${baseUrl}/api/health`);
@@ -152,12 +151,10 @@ async function runSmokeTests() {
         // Тест 6: Создание поездки без явной передачи цены (base_price)
         console.log('\n--- Тест 6: POST /api/rides без base_price (динамический расчет цены и дистанции) ---');
         try {
-            // Очищаем предыдущие данные тестового водителя, если они остались
             await pool.query("DELETE FROM rides WHERE driver_id IN (SELECT id FROM users WHERE username = 'smoke_test_driver')");
             await pool.query("DELETE FROM vehicles WHERE driver_id IN (SELECT id FROM users WHERE username = 'smoke_test_driver')");
             await pool.query("DELETE FROM users WHERE username = 'smoke_test_driver'");
 
-            // Создаем временного тестового водителя с валидным хэшем пароля
             const driverInsert = await pool.query(`
                 INSERT INTO users (username, password_hash, first_name, last_name, role)
                 VALUES ('smoke_test_driver', $1, 'ТестВодитель', 'Дымовой', 'driver')
@@ -171,7 +168,6 @@ async function runSmokeTests() {
                 { expiresIn: '1h' }
             );
 
-            // Создаем поездку БЕЗ передачи base_price или price
             const res = await fetch(`${baseUrl}/api/rides`, {
                 method: 'POST',
                 headers: {
@@ -179,8 +175,8 @@ async function runSmokeTests() {
                     'Authorization': `Bearer ${driverToken}`
                 },
                 body: JSON.stringify({
-                    start_point: { lat: 56.8885, lon: 60.5975 }, // Уралмаш
-                    end_point: { lat: 56.7686, lon: 60.7712 },   // Кампус Новокольцовский
+                    start_point: { lat: 56.8885, lon: 60.5975 },
+                    end_point: { lat: 56.7686, lon: 60.7712 },
                     total_seats: 3
                 })
             });
@@ -210,8 +206,7 @@ async function runSmokeTests() {
 
             console.log(`Статус: ${status} (Ожидался: 201)`);
             console.log(`Рассчитанная дистанция: ${distance} км`);
-            console.log(`Рассчитанная стоимость: ${price} руб (Ожидалось: ~132.6 руб)`);
-            console.log(`Пиковый коэффициент (isPeak): ${ride?.isPeak ?? ride?.is_peak}`);
+            console.log(`Рассчитанная стоимость: ${price} руб`);
             if (!pass) hasErrors = true;
         } catch (err) {
             console.error('Ошибка при создании поездки без цены:', err.message);
@@ -219,10 +214,9 @@ async function runSmokeTests() {
             hasErrors = true;
         }
 
-        // Тест 7: Гео-поиск поездок по координатам и радиусу (GET /api/rides?start_lat=...&start_lon=...&end_lat=...&end_lon=...&radius=1000)
+        // Тест 7: Гео-поиск поездок по координатам и радиусу
         console.log('\n--- Тест 7: GET /api/rides с гео-фильтрами (координаты и радиус) ---');
         try {
-            // Запрос с совпадающими координатами и радиусом 1000м
             const matchingUrl = `${baseUrl}/api/rides?start_lat=56.8885&start_lon=60.5975&end_lat=56.7686&end_lon=60.7712&radius=1000`;
             const matchRes = await fetch(matchingUrl);
             const matchStatus = matchRes.status;
@@ -231,7 +225,6 @@ async function runSmokeTests() {
             const foundCreatedRide = Array.isArray(matchData.rides) &&
                                      matchData.rides.some((r) => r.id === createdRideId);
 
-            // Запрос с далекими координатами (проверка корректной фильтрации PostGIS)
             const nonMatchingUrl = `${baseUrl}/api/rides?start_lat=55.0000&start_lon=55.0000&end_lat=55.1000&end_lon=55.1000&radius=1000`;
             const nonMatchRes = await fetch(nonMatchingUrl);
             const nonMatchStatus = nonMatchRes.status;
@@ -249,13 +242,7 @@ async function runSmokeTests() {
                 test: 'GET /api/rides geo-search (coordinates & radius)',
                 expectedStatus: 200,
                 actualStatus: matchStatus,
-                passed: pass,
-                details: {
-                    matchedCount: matchData.count,
-                    foundTargetRide: foundCreatedRide,
-                    nonMatchCount: nonMatchData.count,
-                    correctlyExcluded: nonMatchExcluded
-                }
+                passed: pass
             });
 
             console.log(`Поиск в радиусе 1000м: статус ${matchStatus}, найдено ${matchData.count}, целевая поездка найдена: ${foundCreatedRide}`);
@@ -270,10 +257,8 @@ async function runSmokeTests() {
         // Тест 8: Отправка отзыва водителю и проверка обновления average_rating в /api/auth/me
         console.log('\n--- Тест 8: POST /api/reviews и проверка GET /api/auth/me (обновление рейтинга) ---');
         try {
-            // Очищаем предыдущие данные тестового пассажира, если они остались
             await pool.query("DELETE FROM users WHERE username = 'smoke_test_passenger'");
 
-            // Создаем тестового пассажира с валидным хэшем пароля
             const passengerInsert = await pool.query(`
                 INSERT INTO users (username, password_hash, first_name, last_name, role)
                 VALUES ('smoke_test_passenger', $1, 'ТестПассажир', 'Дымовой', 'passenger')
@@ -287,7 +272,6 @@ async function runSmokeTests() {
                 { expiresIn: '1h' }
             );
 
-            // 1. Отправляем отзыв водителю от лица пассажира
             const reviewRes = await fetch(`${baseUrl}/api/reviews`, {
                 method: 'POST',
                 headers: {
@@ -306,10 +290,6 @@ async function runSmokeTests() {
             const reviewData = await reviewRes.json();
             const reviewCreated = reviewStatus === 201 && reviewData.review && reviewData.review.rating === 5;
 
-            console.log(`Создание отзыва (POST /api/reviews): статус ${reviewStatus} (Ожидался: 201)`);
-            console.log(`Ответ отзыва:`, JSON.stringify(reviewData, null, 2));
-
-            // 2. Делаем запрос к /api/auth/me водителя и проверяем, что average_rating обновился
             const driverMeRes = await fetch(`${baseUrl}/api/auth/me`, {
                 method: 'GET',
                 headers: {
@@ -321,23 +301,13 @@ async function runSmokeTests() {
             const driverMeData = await driverMeRes.json();
             const avgRating = driverMeData.average_rating ?? driverMeData.user?.average_rating;
 
-            console.log(`Запрос профиля водителя (GET /api/auth/me): статус ${driverMeStatus} (Ожидался: 200)`);
-            console.log(`Средний рейтинг водителя (average_rating): ${avgRating} (Ожидался: 5)`);
-
-            const pass = reviewCreated &&
-                         driverMeStatus === 200 &&
-                         avgRating === 5;
+            const pass = reviewCreated && driverMeStatus === 200 && avgRating === 5;
 
             testResults.push({
                 test: 'POST /api/reviews & GET /api/auth/me (average_rating update)',
                 expectedStatus: 201,
                 actualStatus: reviewStatus,
-                passed: pass,
-                details: {
-                    reviewStatus,
-                    driverMeStatus,
-                    average_rating: avgRating
-                }
+                passed: pass
             });
 
             if (!pass) hasErrors = true;
@@ -350,7 +320,6 @@ async function runSmokeTests() {
         // Тест 9: Добавление автомобиля POST /api/vehicles и создание поездки с vehicle_id
         console.log('\n--- Тест 9: POST /api/vehicles и создание поездки с vehicle_id ---');
         try {
-            // 1. Добавляем автомобиль для водителя
             const vehicleRes = await fetch(`${baseUrl}/api/vehicles`, {
                 method: 'POST',
                 headers: {
@@ -371,24 +340,16 @@ async function runSmokeTests() {
                 createdVehicleId = vehicle.id;
             }
 
-            console.log(`Добавление автомобиля (POST /api/vehicles): статус ${vehicleStatus} (Ожидался: 201)`);
-            console.log(`Ответ добавления автомобиля:`, JSON.stringify(vehicleData, null, 2));
-
-            // 2. Получаем список автомобилей водителя (GET /api/vehicles)
             const getVehiclesRes = await fetch(`${baseUrl}/api/vehicles`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${driverToken}`
                 }
             });
-            const getVehiclesStatus = getVehiclesRes.status;
             const getVehiclesData = await getVehiclesRes.json();
             const foundVehicleInList = Array.isArray(getVehiclesData.vehicles) &&
                 getVehiclesData.vehicles.some((v) => v.id === createdVehicleId);
 
-            console.log(`Получение списка авто (GET /api/vehicles): статус ${getVehiclesStatus}, авто найдено в списке: ${foundVehicleInList}`);
-
-            // 3. Создаем поездку с указанием vehicle_id
             const rideWithVehicleRes = await fetch(`${baseUrl}/api/rides`, {
                 method: 'POST',
                 headers: {
@@ -396,8 +357,8 @@ async function runSmokeTests() {
                     'Authorization': `Bearer ${driverToken}`
                 },
                 body: JSON.stringify({
-                    start_point: { lat: 56.8389, lon: 60.6057 }, // Центр
-                    end_point: { lat: 56.7686, lon: 60.7712 },   // Кампус
+                    start_point: { lat: 56.8389, lon: 60.6057 },
+                    end_point: { lat: 56.7686, lon: 60.7712 },
                     total_seats: 4,
                     vehicle_id: createdVehicleId
                 })
@@ -410,12 +371,9 @@ async function runSmokeTests() {
                 createdRideWithVehicleId = rideWithVehicle.id;
             }
 
-            console.log(`Создание поездки с vehicle_id: статус ${rideWithVehicleStatus} (Ожидался: 201)`);
-            console.log(`vehicle_id в ответе поездки: ${rideWithVehicle?.vehicle_id} (Ожидался: ${createdVehicleId})`);
-
             const pass = vehicleStatus === 201 &&
                          createdVehicleId !== null &&
-                         getVehiclesStatus === 200 &&
+                         getVehiclesRes.status === 200 &&
                          foundVehicleInList &&
                          rideWithVehicleStatus === 201 &&
                          rideWithVehicle &&
@@ -425,20 +383,152 @@ async function runSmokeTests() {
                 test: 'POST /api/vehicles & POST /api/rides with vehicle_id',
                 expectedStatus: 201,
                 actualStatus: rideWithVehicleStatus,
-                passed: pass,
-                details: {
-                    vehicleStatus,
-                    createdVehicleId,
-                    getVehiclesStatus,
-                    rideWithVehicleStatus,
-                    vehicleIdMatches: rideWithVehicle?.vehicle_id === createdVehicleId
-                }
+                passed: pass
             });
 
             if (!pass) hasErrors = true;
         } catch (err) {
             console.error('Ошибка при тестировании автомобилей:', err.message);
             testResults.push({ test: 'POST /api/vehicles & POST /api/rides with vehicle_id', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 10: Security - Защита API администратора (авторизация, timing-safe auth)
+        console.log('\n--- Тест 10: Security - Проверка блокировки доступа к /api/admin без ключа и валидация origin ---');
+        try {
+            const validAdminKey = process.env.ADMIN_SECRET || 'poputka_admin_secret_key_30chr';
+            const browserHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Sec-Fetch-Mode': 'cors',
+                'Origin': 'http://localhost:5173'
+            };
+
+            // Запрос без X-Admin-Key (ожидается 401)
+            const noKeyRes = await fetch(`${baseUrl}/api/admin/users`, { headers: browserHeaders });
+            // Запрос с неверным X-Admin-Key (ожидается 403)
+            const wrongKeyRes = await fetch(`${baseUrl}/api/admin/users`, {
+                headers: { ...browserHeaders, 'X-Admin-Key': 'wrong_invalid_admin_secret_key' }
+            });
+            // Запрос с недоверенного Origin (ожидается 403)
+            const untrustedOriginRes = await fetch(`${baseUrl}/api/admin/users`, {
+                headers: { ...browserHeaders, 'Origin': 'http://attacker-site.com', 'X-Admin-Key': validAdminKey }
+            });
+            // Запрос с валидным ключом и доверенным Origin (ожидается 200)
+            const validAdminRes = await fetch(`${baseUrl}/api/admin/users`, {
+                headers: { ...browserHeaders, 'X-Admin-Key': validAdminKey }
+            });
+
+            const pass = noKeyRes.status === 401 &&
+                         wrongKeyRes.status === 403 &&
+                         untrustedOriginRes.status === 403 &&
+                         validAdminRes.status === 200;
+
+            console.log(`Без ключа: ${noKeyRes.status} (Ожидался: 401)`);
+            console.log(`Неверный ключ: ${wrongKeyRes.status} (Ожидался: 403)`);
+            console.log(`Недоверенный Origin: ${untrustedOriginRes.status} (Ожидался: 403)`);
+            console.log(`Корректный ключ и Origin: ${validAdminRes.status} (Ожидался: 200)`);
+
+            testResults.push({
+                test: 'Security: Admin API authentication & origin protection',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании безопасности админ API:', err.message);
+            testResults.push({ test: 'Security: Admin API authentication & origin protection', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 11: Security - Защита админских маршрутов от некорректных UUID (400 вместо 500)
+        console.log('\n--- Тест 11: Security - Защита параметров :id в adminRoutes (UUID валидация) ---');
+        try {
+            const validAdminKey = process.env.ADMIN_SECRET || 'poputka_admin_secret_key_30chr';
+            const adminHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Sec-Fetch-Mode': 'cors',
+                'Origin': 'http://localhost:5173',
+                'X-Admin-Key': validAdminKey
+            };
+
+            const invalidUuidRes = await fetch(`${baseUrl}/api/admin/users/not-a-valid-uuid-123`, {
+                headers: adminHeaders
+            });
+            const invalidRideUuidRes = await fetch(`${baseUrl}/api/admin/rides/inject-string`, {
+                headers: adminHeaders
+            });
+
+            const pass = invalidUuidRes.status === 400 && invalidRideUuidRes.status === 400;
+
+            console.log(`GET /api/admin/users/not-a-uuid: статус ${invalidUuidRes.status} (Ожидался: 400)`);
+            console.log(`GET /api/admin/rides/inject-string: статус ${invalidRideUuidRes.status} (Ожидался: 400)`);
+
+            testResults.push({
+                test: 'Security: Admin routes reject invalid UUID with 400 Bad Request',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при проверке валидации UUID в админке:', err.message);
+            testResults.push({ test: 'Security: Admin routes reject invalid UUID', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 12: Security - Защита загрузки аватара от MIME Spoofing и Directory Traversal
+        console.log('\n--- Тест 12: Security - Защита uploadAvatar от подделки MIME-типа (Magic Bytes) ---');
+        try {
+            // Попытка 1: Подделка расширения (evil.php с Content-Type: image/png)
+            const form1 = new FormData();
+            form1.append('avatar', new Blob(['test payload'], { type: 'image/png' }), 'evil.php');
+
+            const extSpoofRes = await fetch(`${baseUrl}/api/auth/me/avatar`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` },
+                body: form1
+            });
+
+            // Попытка 2: Подделка содержимого (PHP-скрипт с расширением .png и Content-Type: image/png)
+            const form2 = new FormData();
+            form2.append('avatar', new Blob(['<?php phpinfo(); ?>'], { type: 'image/png' }), 'malicious.png');
+
+            const mimeSpoofRes = await fetch(`${baseUrl}/api/auth/me/avatar`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` },
+                body: form2
+            });
+
+            // Попытка 3: Легитимный PNG с валидной сигнатурой magic bytes
+            const validPngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0]);
+            const form3 = new FormData();
+            form3.append('avatar', new Blob([validPngBytes], { type: 'image/png' }), 'valid_avatar.png');
+
+            const validUploadRes = await fetch(`${baseUrl}/api/auth/me/avatar`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` },
+                body: form3
+            });
+            const validUploadData = await validUploadRes.json();
+
+            const pass = extSpoofRes.status === 400 &&
+                         mimeSpoofRes.status === 400 &&
+                         validUploadRes.status === 200 &&
+                         validUploadData.avatar_url &&
+                         validUploadData.avatar_url.startsWith('/uploads/avatar_');
+
+            console.log(`Попытка загрузки .php: статус ${extSpoofRes.status} (Ожидался: 400)`);
+            console.log(`Попытка загрузки фейкового PNG (MIME spoofing): статус ${mimeSpoofRes.status} (Ожидался: 400)`);
+            console.log(`Загрузка валидного PNG: статус ${validUploadRes.status} (Ожидался: 200)`);
+
+            testResults.push({
+                test: 'Security: Avatar upload prevents extension & MIME-type bypass (Magic Bytes)',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании безопасности загрузки файлов:', err.message);
+            testResults.push({ test: 'Security: Avatar upload prevents extension & MIME bypass', passed: false, error: err.message });
             hasErrors = true;
         }
 
@@ -474,6 +564,19 @@ async function runSmokeTests() {
                 await pool.query('DELETE FROM users WHERE id = $1', [createdDriverId]);
             } catch (_) {}
         }
+
+        // Очистка загруженных тестовых аватаров
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const uploadsPath = path.join(__dirname, 'uploads');
+            const files = fs.readdirSync(uploadsPath);
+            for (const f of files) {
+                if (f !== '.gitkeep') {
+                    fs.unlinkSync(path.join(uploadsPath, f));
+                }
+            }
+        } catch (_) {}
 
         // Корректное закрытие сервера и пула БД
         console.log('\n--- Завершение работы тестового сервера ---');

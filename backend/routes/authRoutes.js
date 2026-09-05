@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/authMiddleware');
-const { uploadAvatar } = require('../middleware/uploadMiddleware');
+const { handleAvatarUpload } = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
@@ -29,14 +29,7 @@ router.post('/login', authLimiter, authController.login);
 // Получение профиля текущего пользователя
 router.get('/me', authenticateToken, authController.getProfile);
 
-// Загрузка аватарки текущего пользователя
-router.post('/me/avatar', authenticateToken, (req, res, next) => {
-    uploadAvatar.single('avatar')(req, res, (err) => {
-        if (err) {
-            return res.status(400).json({ error: err.message || 'Ошибка загрузки файла' });
-        }
-        next();
-    });
-}, authController.uploadAvatar);
+// Загрузка аватарки текущего пользователя (с валидацией расширения и сигнатуры magic bytes)
+router.post('/me/avatar', authenticateToken, handleAvatarUpload, authController.uploadAvatar);
 
 module.exports = router;
