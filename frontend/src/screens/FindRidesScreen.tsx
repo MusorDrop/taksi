@@ -187,6 +187,9 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       const parsedDate = response.date || '';
       const parsedTime = response.time || '';
 
+      // Сбрасываем старый текстовый фильтр поиска перед установкой новых параметров
+      setQuery('');
+
       setFilters({
         from: parsedFrom,
         to: parsedTo,
@@ -194,30 +197,35 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
         time: parsedTime,
       });
 
-      // Если в ответе распознана дата, вычисляем день недели и выставляем чип
+      // Если в ответе распознана дата, парсим как локальную дату и вычисляем день недели
       if (parsedDate) {
-        const dateObj = new Date(parsedDate);
+        const localDateString = parsedDate.includes('T') ? parsedDate : `${parsedDate}T00:00:00`;
+        const dateObj = new Date(localDateString);
         if (!isNaN(dateObj.getTime())) {
           const dayKeys: DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
           setFilterDay(dayKeys[dateObj.getDay()]);
+        } else {
+          setFilterDay(null);
         }
+      } else {
+        setFilterDay(null);
       }
 
-      // Если распознано количество мест от 2
+      // Если распознано количество мест от 2 — включаем фильтр, иначе (в т.ч. seats: 1) отключаем
       if (typeof response.seats === 'number' && response.seats >= 2) {
         setFilterTwoSeats(true);
+      } else {
+        setFilterTwoSeats(false);
       }
 
-      // Если распознаны теги особенностей поездки
+      // Теги должны ЗАМЕНЯТЬСЯ, а не накапливаться из предыдущих запросов
       const parsedTags = Array.isArray(response.tags) && response.tags.length > 0
         ? response.tags
         : Array.isArray(response.parsed?.tags) && response.parsed.tags.length > 0
         ? response.parsed.tags
         : [];
 
-      if (parsedTags.length > 0) {
-        setFilterTags((prev) => Array.from(new Set([...prev, ...parsedTags])));
-      }
+      setFilterTags(parsedTags);
 
       // Автоматический вызов поиска поездок
       await fetchRides();
@@ -233,8 +241,6 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
    * Активирует сортировку по расстоянию и запрашивает геолокацию пользователя
    */
   const handleSelectSortDistance = (): void => {
-    setSortBy('distance');
-
     if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position: GeolocationPosition) => {
@@ -242,6 +248,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             lat: position.coords.latitude,
             lon: position.coords.longitude,
           });
+          setSortBy('distance');
         },
         (error: GeolocationPositionError) => {
           console.warn('Ошибка получения геолокации:', error);
