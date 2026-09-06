@@ -24,7 +24,16 @@ export default function BottomNav({ value, onChange }: BottomNavProps) {
         zIndex: 1100,
         borderRadius: 0,
         borderTop: '1px solid',
-        borderColor: 'divider',
+        borderColor: (theme) =>
+          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.06)',
+        boxShadow: (theme) =>
+          theme.palette.mode === 'dark'
+            ? '0 -4px 20px 0 rgba(0, 0, 0, 0.4)'
+            : '0 -4px 20px 0 rgba(15, 23, 42, 0.03)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        bgcolor: (theme) =>
+          theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.85)',
         pb: 'env(safe-area-inset-bottom)',
       }}
     >
@@ -33,14 +42,37 @@ export default function BottomNav({ value, onChange }: BottomNavProps) {
         onChange={(_, v: TabKey) => onChange(v)}
         showLabels
         sx={{
-          bgcolor: 'background.paper',
+          bgcolor: 'transparent',
           height: 64,
-          '& .MuiBottomNavigationAction-label': {
-            fontSize: '0.68rem',
-            fontWeight: 600,
+          '& .MuiBottomNavigationAction-root': {
+            minWidth: 0,
+            py: 0.75,
+            px: 0.5,
+            mx: 0.5,
+            borderRadius: 2.5,
+            transition: 'background-color 0.15s ease, color 0.15s ease',
+            '&:hover': {
+              bgcolor: 'action.hover',
+            },
+            '& .MuiSvgIcon-root': {
+              fontSize: 23,
+              transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            },
+            '&.Mui-selected': {
+              color: 'primary.main',
+              '& .MuiSvgIcon-root': {
+                transform: 'scale(1.12)',
+              },
+            },
           },
-          '& .Mui-selected': {
-            color: 'primary.main',
+          '& .MuiBottomNavigationAction-label': {
+            fontSize: '0.7rem',
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            mt: 0.25,
+            '&.Mui-selected': {
+              fontSize: '0.7rem',
+            },
           },
         }}
       >

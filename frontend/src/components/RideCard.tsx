@@ -315,11 +315,26 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       onClick={() => setExpanded(!expanded)}
       sx={{
         cursor: 'pointer',
-        transition: 'box-shadow 0.2s, border-color 0.2s',
-        '&:hover': { borderColor: 'primary.main' },
+        borderRadius: 4,
+        borderColor: (theme) =>
+          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+        boxShadow: (theme) =>
+          theme.palette.mode === 'dark'
+            ? '0 4px 16px rgba(0, 0, 0, 0.25)'
+            : '0 2px 8px -2px rgba(15, 23, 42, 0.05), 0 1px 3px -1px rgba(15, 23, 42, 0.03)',
+        transition:
+          'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease',
+        '&:hover': {
+          transform: 'translateY(-2px)',
+          borderColor: 'primary.light',
+          boxShadow: (theme) =>
+            theme.palette.mode === 'dark'
+              ? '0 12px 28px rgba(0, 0, 0, 0.4)'
+              : '0 12px 24px -4px rgba(15, 23, 42, 0.09), 0 4px 10px -2px rgba(15, 23, 42, 0.04)',
+        },
       }}
     >
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+      <CardContent sx={{ p: { xs: 2, sm: 2.25 }, '&:last-child': { pb: { xs: 2, sm: 2.25 } } }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box
             onClick={handleOpenReviews}
@@ -328,10 +343,10 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               alignItems: 'center',
               gap: 1.2,
               cursor: 'pointer',
-              borderRadius: 2,
-              p: 0.5,
-              m: -0.5,
-              transition: 'background-color 0.15s',
+              borderRadius: 2.5,
+              p: 0.6,
+              m: -0.6,
+              transition: 'background-color 0.15s ease',
               '&:hover': {
                 bgcolor: 'action.hover',
               },
@@ -342,23 +357,26 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               alt={ride.driverName}
               sx={{
                 bgcolor: 'primary.main',
-                width: 40,
-                height: 40,
+                width: 42,
+                height: 42,
                 fontSize: 14,
-                transition: 'transform 0.15s',
-                '&:hover': { transform: 'scale(1.05)' },
+                boxShadow: '0 2px 8px rgba(0, 113, 227, 0.25)',
+                border: '2px solid',
+                borderColor: 'background.paper',
+                transition: 'transform 0.15s ease',
+                '&:hover': { transform: 'scale(1.06)' },
               }}
             >
               {initials}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle2" noWrap sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle2" noWrap sx={{ fontWeight: 650, letterSpacing: '-0.01em' }}>
                 {ride.driverName}
               </Typography>
               <Stack direction="row" spacing={0.5} alignItems="center">
                 {hasDriverReviews ? (
                   <Stack direction="row" spacing={0.3} alignItems="center">
-                    <StarIcon sx={{ fontSize: 13, color: '#faaf00' }} />
+                    <StarIcon sx={{ fontSize: 13, color: '#f59e0b' }} />
                     <Typography variant="caption" sx={{ fontWeight: 700 }}>
                       {driverRatingVal.toFixed(1)}
                     </Typography>
@@ -377,19 +395,32 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
 
           <Box sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
-              <AccessTimeIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
-              <Typography variant="caption" color="text.secondary">
+              <AccessTimeIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                 {ride.time} • {ride.distanceKm} км
               </Typography>
             </Stack>
           </Box>
           <Box sx={{ textAlign: 'right' }}>
-            <Typography variant="h6" color="primary.main" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            <Typography variant="h6" color="primary.main" sx={{ fontWeight: 750, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
               {ride.price} ₽
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.72rem', lineHeight: 1.2, mt: 0.3 }}>
-              за место • {ride.availableSeats ?? 0} мест
-            </Typography>
+            <Box
+              component="span"
+              sx={{
+                display: 'inline-block',
+                mt: 0.3,
+                px: 0.8,
+                py: 0.15,
+                borderRadius: 1.5,
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(0, 113, 227, 0.15)' : 'rgba(0, 113, 227, 0.08)',
+              }}
+            >
+              <Typography variant="caption" sx={{ display: 'block', fontSize: '0.71rem', lineHeight: 1.2, fontWeight: 600, color: 'primary.main' }}>
+                за место • {ride.availableSeats ?? 0} мест
+              </Typography>
+            </Box>
           </Box>
           <IconButton
             size="small"
@@ -399,25 +430,41 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             }}
             sx={{
               transform: expanded ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.2s',
+              transition: 'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease',
+              p: 0.6,
+              borderRadius: 2,
+              bgcolor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.03)',
+              '&:hover': {
+                bgcolor: 'action.hover',
+              },
             }}
           >
-            <ExpandMoreIcon />
+            <ExpandMoreIcon fontSize="small" />
           </IconButton>
         </Stack>
 
-        <Stack direction="row" spacing={1} sx={{ mt: 1.5 }} alignItems="center">
+        <Stack direction="row" spacing={1} sx={{ mt: 1.75 }} alignItems="center">
           <Box sx={{ flex: 1 }}>
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <LocationOnIcon sx={{ fontSize: 14, color: 'primary.main' }} />
-              <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+            <Stack direction="row" spacing={0.75} alignItems="center">
+              <LocationOnIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+              <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }} noWrap>
                 {ride.from}
               </Typography>
             </Stack>
-            <Box sx={{ ml: 0.7, my: 0.3, borderLeft: '2px dashed', borderColor: 'divider', height: 8 }} />
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <LocationOnIcon sx={{ fontSize: 14, color: 'error.main' }} />
-              <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+            <Box
+              sx={{
+                ml: 0.95,
+                my: 0.35,
+                borderLeft: '2px dashed',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 113, 227, 0.35)',
+                height: 10,
+              }}
+            />
+            <Stack direction="row" spacing={0.75} alignItems="center">
+              <LocationOnIcon sx={{ fontSize: 16, color: 'error.main' }} />
+              <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.875rem' }} noWrap>
                 {ride.to}
               </Typography>
             </Stack>
@@ -428,9 +475,10 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           <Box
             sx={{
               mt: 1.2,
-              p: 1,
-              borderRadius: 1.5,
-              bgcolor: 'action.hover',
+              p: 1.2,
+              borderRadius: 2,
+              bgcolor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 113, 227, 0.03)',
               borderLeft: '3px solid',
               borderColor: 'primary.main',
             }}
@@ -442,27 +490,33 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
         )}
 
         {ride.tags && ride.tags.length > 0 && (
-          <Stack direction="row" spacing={0.6} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={0.6} sx={{ mt: 1.2 }} flexWrap="wrap" useFlexGap>
             {ride.tags.map((tag) => (
               <Chip
                 key={tag}
                 size="small"
                 label={tag}
                 variant="outlined"
-                sx={{ fontSize: '0.75rem', height: 22 }}
+                sx={{
+                  fontSize: '0.74rem',
+                  height: 24,
+                  borderRadius: 2,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.02)',
+                }}
               />
             ))}
           </Stack>
         )}
 
-        <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+        <Stack direction="row" spacing={0.6} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
           {!isRegular && (
             <Chip
               size="small"
               icon={<EventIcon sx={{ fontSize: 14 }} />}
               label={ride.dateFormatted || ride.dateString || 'Сегодня'}
               variant="outlined"
-              sx={{ maxWidth: '100%' }}
+              sx={{ maxWidth: '100%', borderRadius: 2, height: 26 }}
             />
           )}
           {isRegular && (
@@ -472,7 +526,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               label={regularLabel}
               color="secondary"
               variant="outlined"
-              sx={{ fontWeight: 500 }}
+              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
           {ride.isPeak && (
@@ -481,7 +535,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               icon={<BoltIcon sx={{ fontSize: 14 }} />}
               label="+30% Пиковый спрос"
               color="warning"
-              sx={{ fontWeight: 600 }}
+              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
           {isRideActive && (
@@ -489,7 +543,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               size="small"
               label="Поездка началась"
               color="primary"
-              sx={{ fontWeight: 600 }}
+              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
           {isCompleted && (
@@ -499,31 +553,54 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               label={isReviewed ? 'Отзыв отправлен' : 'Поездка завершена'}
               color="success"
               variant="outlined"
-              sx={{ fontWeight: 600 }}
+              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
         </Stack>
       </CardContent>
 
       <Collapse in={expanded}>
-        <Box sx={{ p: { xs: 1.5, sm: 2 }, pt: 0 }}>
-          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: { xs: 1.5, sm: 2 } }}>
+        <Box sx={{ p: { xs: 2, sm: 2.5 }, pt: 0 }}>
+          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
             {/* Контейнер интерактивной карты с предотвращением всплытия событий к родительской карточке */}
             <Box
-              sx={{ mb: 2, width: '100%' }}
+              sx={{
+                mb: 2.5,
+                width: '100%',
+                borderRadius: 3,
+                overflow: 'hidden',
+                border: '1px solid',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                boxShadow: (theme) =>
+                  theme.palette.mode === 'dark'
+                    ? '0 2px 10px rgba(0, 0, 0, 0.25)'
+                    : '0 2px 8px -2px rgba(15, 23, 42, 0.05)',
+              }}
               onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
               onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
               onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
               onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
               onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
             >
-              <Typography
-                variant="subtitle2"
-                sx={{ fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}
+              <Box
+                sx={{
+                  px: 1.75,
+                  py: 1,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.02)',
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
+                }}
               >
-                <LocationOnIcon sx={{ fontSize: 18, color: 'primary.main' }} />
-                Маршрут на карте
-              </Typography>
+                <Typography
+                  variant="subtitle2"
+                  sx={{ fontWeight: 650, display: 'flex', alignItems: 'center', gap: 0.6, fontSize: '0.85rem' }}
+                >
+                  <LocationOnIcon sx={{ fontSize: 17, color: 'primary.main' }} />
+                  Маршрут на карте
+                </Typography>
+              </Box>
               <Box
                 onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
                 onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
@@ -556,13 +633,13 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               <Box sx={{ mb: 2 }}>
                 <Typography
                   variant="subtitle2"
-                  sx={{ fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}
+                  sx={{ fontWeight: 650, mb: 1.2, display: 'flex', alignItems: 'center', gap: 0.6 }}
                 >
                   <GroupIcon sx={{ fontSize: 18 }} />
                   Попутчики ({ride.passengers?.length || 0}):
                 </Typography>
                 {kickError && (
-                  <Alert severity="error" sx={{ mb: 1 }} onClose={() => setKickError(null)}>
+                  <Alert severity="error" sx={{ mb: 1, borderRadius: 2 }} onClose={() => setKickError(null)}>
                     {kickError}
                   </Alert>
                 )}
@@ -573,12 +650,20 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                         key={p.id}
                         variant="outlined"
                         sx={{
-                          p: 1.2,
-                          borderRadius: 2,
+                          p: 1.25,
+                          borderRadius: 2.5,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           gap: 1,
+                          borderColor: (theme) =>
+                            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+                          transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                          '&:hover': {
+                            borderColor: 'primary.light',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                          },
                         }}
                       >
                         <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
@@ -725,6 +810,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                     e.stopPropagation();
                     setReviewDialogOpen(true);
                   }}
+                  sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                 >
                   {isReviewed ? 'Отзыв оставлен ✓' : 'Оставить отзыв'}
                 </Button>
@@ -743,6 +829,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                         e.stopPropagation();
                         handleStartRide();
                       }}
+                      sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                     >
                       Начать поездку
                     </Button>
@@ -759,6 +846,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                         e.stopPropagation();
                         handleFinishRide();
                       }}
+                      sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                     >
                       Завершить поездку
                     </Button>
@@ -778,6 +866,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                         setEditSeats(String(ride.totalSeats || 4));
                         setEditDialogOpen(true);
                       }}
+                      sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                     >
                       Редактировать маршрут
                     </Button>
@@ -793,6 +882,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                         e.stopPropagation();
                         setDeleteDialogOpen(true);
                       }}
+                      sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                     >
                       Отменить поездку
                     </Button>
@@ -810,6 +900,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
+                    sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                   >
                     Написать в Telegram
                   </Button>
@@ -822,6 +913,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                       component="a"
                       href={`tel:${ride.driverPhone}`}
                       onClick={(e) => e.stopPropagation()}
+                      sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                     >
                       Позвонить
                     </Button>
@@ -838,6 +930,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                     e.stopPropagation();
                     onLeave();
                   }}
+                  sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                 >
                   Отменить участие
                 </Button>
@@ -848,6 +941,12 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   variant="contained"
                   size="small"
                   onClick={handleJoinClick}
+                  sx={{
+                    py: 1,
+                    borderRadius: 2.5,
+                    fontWeight: 650,
+                    boxShadow: '0 4px 14px 0 rgba(0, 113, 227, 0.28)',
+                  }}
                 >
                   Поехать вместе
                 </Button>
