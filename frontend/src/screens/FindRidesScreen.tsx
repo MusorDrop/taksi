@@ -5,7 +5,6 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
-import InputAdornment from '@mui/material/InputAdornment';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
@@ -30,7 +29,6 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiQuery, setAiQuery] = useState<string>('');
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
-  const [filterDest, setFilterDest] = useState<string>('');
 
   const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -58,19 +56,12 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       result = result.filter((r) => getRideDayKey(r) === filterDay);
     }
 
-    if (filterDest.trim()) {
-      const q = filterDest.toLowerCase();
-      result = result.filter(
-        (r) => r.to.toLowerCase().includes(q) || r.from.toLowerCase().includes(q),
-      );
-    }
-
     if (query.trim()) {
       result = filterRidesByNlpQuery(result, query);
     }
 
     return result;
-  }, [rides, query, filterDay, filterDest]);
+  }, [rides, query, filterDay]);
 
   return (
     <Box sx={{ pb: { xs: 12, sm: 8 } }}>
@@ -179,32 +170,6 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
           </Button>
         </Stack>
       </Paper>
-
-      {/* Filters */}
-      <Stack direction="row" spacing={1} sx={{ mb: 1.75 }} alignItems="center">
-        <TextField
-          fullWidth
-          size="small"
-          placeholder="Фильтр по назначению"
-          value={filterDest}
-          onChange={(e) => setFilterDest(e.target.value)}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              borderRadius: 2.5,
-              bgcolor: 'background.paper',
-            },
-          }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
-      </Stack>
 
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2.5 }}>
         {DAY_KEYS.map((day) => (
@@ -320,7 +285,6 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               setQuery('');
               setAiQuery('');
               setFilterDay(null);
-              setFilterDest('');
             }}
             sx={{ borderRadius: 2.5, fontWeight: 600, px: 2 }}
           >
