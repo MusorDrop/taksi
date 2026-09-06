@@ -84,8 +84,8 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
   } = useRideForm();
 
   return (
-    <Box sx={{ pb: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Создать поездку
       </Typography>
 
@@ -325,16 +325,30 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          <RouteMap
-            from={fromSuggest.value || 'Точка А'}
-            to={toSuggest.value || 'Точка Б'}
-            polyline={routePolyline}
-            startCoords={startCoords}
-            endCoords={endCoords}
-            distanceKm={routeDistance}
-            durationMin={routeDuration}
-            height={280}
-          />
+          <Box
+            sx={{
+              borderRadius: 3.5,
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+              boxShadow: (theme) =>
+                theme.palette.mode === 'dark'
+                  ? '0 4px 16px rgba(0, 0, 0, 0.25)'
+                  : '0 2px 8px -2px rgba(15, 23, 42, 0.06)',
+            }}
+          >
+            <RouteMap
+              from={fromSuggest.value || 'Точка А'}
+              to={toSuggest.value || 'Точка Б'}
+              polyline={routePolyline}
+              startCoords={startCoords}
+              endCoords={endCoords}
+              distanceKm={routeDistance}
+              durationMin={routeDuration}
+              height={280}
+            />
+          </Box>
 
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -453,17 +467,18 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
           <Paper
             variant="outlined"
             sx={{
-              p: 2,
-              borderRadius: 3,
+              p: 2.25,
+              borderRadius: 3.5,
               background: AI_ACCENT.bg,
               borderColor: AI_ACCENT.border,
+              boxShadow: '0 4px 18px rgba(0, 113, 227, 0.08)',
             }}
           >
             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
               <Box
                 sx={{
-                  width: 32,
-                  height: 32,
+                  width: 34,
+                  height: 34,
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
@@ -471,11 +486,12 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                   bgcolor: AI_ACCENT.iconBg,
                   color: AI_ACCENT.iconColor,
                   flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(0, 113, 227, 0.2)',
                 }}
               >
                 <AutoAwesomeIcon sx={{ fontSize: 18 }} />
               </Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: AI_ACCENT.text }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: AI_ACCENT.text, letterSpacing: '-0.01em' }}>
                 Расчет стоимости маршрута
               </Typography>
               {isRouteLoading && <CircularProgress size={16} sx={{ color: AI_ACCENT.iconColor, ml: 1 }} />}
@@ -485,12 +501,12 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                   label="Пиковый спрос +30%"
                   size="small"
                   color="warning"
-                  sx={{ fontWeight: 600, ml: 'auto' }}
+                  sx={{ fontWeight: 650, ml: 'auto', borderRadius: 2 }}
                 />
               )}
             </Stack>
 
-            <Typography variant="body2" sx={{ color: AI_ACCENT.subtleText, fontWeight: 500, mb: 1.5 }}>
+            <Typography variant="body2" sx={{ color: AI_ACCENT.subtleText, fontWeight: 500, mb: 1.5, lineHeight: 1.5 }}>
               {isRouteLoading
                 ? 'Связываемся с сервисом маршрутов для точного расчета...'
                 : routeDistance
@@ -505,6 +521,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
               onClick={handleApplyRecommendation}
               sx={{
                 bgcolor: AI_ACCENT.button,
+                py: 1,
+                borderRadius: 2.5,
+                fontWeight: 700,
+                boxShadow: '0 4px 14px rgba(0, 113, 227, 0.25)',
                 '&:hover': { bgcolor: AI_ACCENT.buttonHover },
               }}
             >
@@ -537,7 +557,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
 
           {/* Панель выбора тегов поездки (Chips) */}
           <Box>
-            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 650, mb: 1 }}>
               Особенности поездки
             </Typography>
             <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
@@ -552,7 +572,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                     color={isSelected ? 'primary' : 'default'}
                     variant={isSelected ? 'filled' : 'outlined'}
                     onClick={() => handleTagToggle(tag)}
-                    sx={{ fontWeight: 500 }}
+                    sx={{ fontWeight: 600, borderRadius: 2 }}
                   />
                 );
               })}
@@ -596,7 +616,13 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             size="large"
             disabled={!canSubmit || isSubmitting}
             startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : null}
-            sx={{ py: 1.2, fontSize: '1rem' }}
+            sx={{
+              py: 1.3,
+              borderRadius: 3,
+              fontSize: '1rem',
+              fontWeight: 700,
+              boxShadow: '0 4px 18px rgba(0, 113, 227, 0.32)',
+            }}
           >
             {isSubmitting ? 'Публикация на сервере...' : 'Опубликовать поездку'}
           </Button>

@@ -52,6 +52,8 @@ const globalStyles = (
       body: {
         overscrollBehavior: 'none',
         WebkitOverflowScrolling: 'touch',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
       },
       '#root': {
         paddingTop: 'env(safe-area-inset-top)',
@@ -88,7 +90,7 @@ function AppContent() {
           bgcolor: 'background.default',
         }}
       >
-        <Container maxWidth="md" sx={{ px: 2, pt: 2 }}>
+        <Container maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
           <AdminScreen
             onBack={() => {
               if (window.location.hash) {
@@ -131,14 +133,14 @@ function AppContent() {
       sx={{
         minHeight: '100vh',
         bgcolor: 'background.default',
-        pb: 'calc(64px + env(safe-area-inset-bottom))',
+        pb: 'calc(74px + env(safe-area-inset-bottom))',
       }}
     >
       <Container
         maxWidth="sm"
         sx={{
-          px: 2,
-          pt: 2,
+          px: { xs: 2, sm: 2.5 },
+          pt: 2.5,
         }}
       >
         {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}

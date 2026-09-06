@@ -283,29 +283,45 @@ export default function ProfileScreen() {
   const passengerCount = passengerRideIds.length;
 
   return (
-    <Box sx={{ pb: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Профиль
       </Typography>
 
-      <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, textAlign: 'center' }}>
-        <Box sx={{ position: 'relative', width: 88, height: 88, mx: 'auto', mb: 1.5 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 3, sm: 3.5 },
+          borderRadius: 4,
+          textAlign: 'center',
+          borderColor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+          boxShadow: (theme) =>
+            theme.palette.mode === 'dark'
+              ? '0 4px 20px rgba(0, 0, 0, 0.25)'
+              : '0 2px 12px -2px rgba(15, 23, 42, 0.04)',
+        }}
+      >
+        <Box sx={{ position: 'relative', width: 92, height: 92, mx: 'auto', mb: 2 }}>
           <Avatar
             src={formatAvatarUrl(user.avatar_url)}
             alt={user.name}
             sx={{
-              width: 88,
-              height: 88,
+              width: 92,
+              height: 92,
               bgcolor: 'primary.main',
-              fontSize: 28,
-              boxShadow: 1,
+              fontSize: 30,
+              fontWeight: 700,
+              boxShadow: '0 4px 20px rgba(0, 113, 227, 0.3)',
+              border: '3px solid',
+              borderColor: 'background.paper',
             }}
           >
             {initials}
           </Avatar>
           {isUploadingAvatar && (
             <CircularProgress
-              size={88}
+              size={92}
               sx={{
                 position: 'absolute',
                 top: 0,
@@ -324,7 +340,7 @@ export default function ProfileScreen() {
             variant="outlined"
             startIcon={<PhotoCameraIcon />}
             disabled={isUploadingAvatar}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
+            sx={{ textTransform: 'none', borderRadius: 2.5, fontWeight: 600, px: 2 }}
           >
             {isUploadingAvatar ? 'Загрузка...' : user.avatar_url ? 'Сменить фото' : 'Загрузить аватар'}
             <input
@@ -337,7 +353,7 @@ export default function ProfileScreen() {
         </Box>
 
         {avatarSuccess && (
-          <Alert severity="success" sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem' }}>
+          <Alert severity="success" sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem', borderRadius: 2 }}>
             Аватар успешно обновлен!
           </Alert>
         )}
@@ -346,38 +362,38 @@ export default function ProfileScreen() {
           <Alert
             severity="error"
             onClose={() => setAvatarError(null)}
-            sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem' }}
+            sx={{ mb: 1.5, py: 0.5, fontSize: '0.8125rem', borderRadius: 2 }}
           >
             {avatarError}
           </Alert>
         )}
 
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
           {user.name}
         </Typography>
-        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" sx={{ mt: 0.5 }}>
+        <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" sx={{ mt: 0.5 }}>
           <SendIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
             @{user.telegram}
           </Typography>
         </Stack>
 
         {user.phone && (
-          <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="center" sx={{ mt: 0.5 }}>
+          <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" sx={{ mt: 0.5 }}>
             <PhoneIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
               {user.phone}
             </Typography>
           </Stack>
         )}
 
         {contactsSuccess && (
-          <Alert severity="success" sx={{ mt: 1.5, py: 0.5, fontSize: '0.8125rem' }}>
+          <Alert severity="success" sx={{ mt: 1.5, py: 0.5, fontSize: '0.8125rem', borderRadius: 2 }}>
             Контакты успешно обновлены!
           </Alert>
         )}
 
-        <Box sx={{ mt: 1.5 }}>
+        <Box sx={{ mt: 2 }}>
           <Button
             size="small"
             variant="outlined"
@@ -388,7 +404,7 @@ export default function ProfileScreen() {
               setContactsError(null);
               setShowEditContacts(true);
             }}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
+            sx={{ textTransform: 'none', borderRadius: 2.5, fontWeight: 600, px: 2 }}
           >
             Изменить телефон и TG
           </Button>
@@ -396,21 +412,65 @@ export default function ProfileScreen() {
       </Paper>
 
       <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-        <Paper variant="outlined" sx={{ flex: 1, p: 2, borderRadius: 3, textAlign: 'center' }}>
-          <DirectionsCarIcon sx={{ fontSize: 28, color: 'primary.main', mb: 1 }} />
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            flex: 1,
+            p: 2.25,
+            borderRadius: 3.5,
+            textAlign: 'center',
+            borderColor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+            boxShadow: (theme) =>
+              theme.palette.mode === 'dark'
+                ? '0 4px 16px rgba(0, 0, 0, 0.2)'
+                : '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: (theme) =>
+                theme.palette.mode === 'dark'
+                  ? '0 8px 24px rgba(0, 0, 0, 0.35)'
+                  : '0 8px 20px -4px rgba(15, 23, 42, 0.08)',
+            },
+          }}
+        >
+          <DirectionsCarIcon sx={{ fontSize: 30, color: 'primary.main', mb: 0.75 }} />
+          <Typography variant="h5" sx={{ fontWeight: 750, letterSpacing: '-0.02em' }}>
             {driverCount}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
             Мои маршруты
           </Typography>
         </Paper>
-        <Paper variant="outlined" sx={{ flex: 1, p: 2, borderRadius: 3, textAlign: 'center' }}>
-          <PersonIcon sx={{ fontSize: 28, color: 'secondary.main', mb: 1 }} />
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            flex: 1,
+            p: 2.25,
+            borderRadius: 3.5,
+            textAlign: 'center',
+            borderColor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+            boxShadow: (theme) =>
+              theme.palette.mode === 'dark'
+                ? '0 4px 16px rgba(0, 0, 0, 0.2)'
+                : '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: (theme) =>
+                theme.palette.mode === 'dark'
+                  ? '0 8px 24px rgba(0, 0, 0, 0.35)'
+                  : '0 8px 20px -4px rgba(15, 23, 42, 0.08)',
+            },
+          }}
+        >
+          <PersonIcon sx={{ fontSize: 30, color: 'secondary.main', mb: 0.75 }} />
+          <Typography variant="h5" sx={{ fontWeight: 750, letterSpacing: '-0.02em' }}>
             {passengerCount}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
             Поездки пассажиром
           </Typography>
         </Paper>
@@ -419,20 +479,42 @@ export default function ProfileScreen() {
       <Divider sx={{ my: 3 }} />
 
       {/* Секция: Переключение темы */}
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 3 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 2,
+          borderRadius: 3.5,
+          mb: 3,
+          borderColor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+        }}
+      >
         <FormControlLabel
           control={<Switch checked={mode === 'dark'} onChange={toggleTheme} />}
           label={
             <Stack direction="row" spacing={1} alignItems="center">
               <DarkModeIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-              <span>Тёмная тема</span>
+              <span style={{ fontWeight: 500 }}>Тёмная тема</span>
             </Stack>
           }
         />
       </Paper>
 
       {/* Секция: Гараж автомобилей */}
-      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, mb: 3 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 2.75,
+          borderRadius: 3.5,
+          mb: 3,
+          borderColor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+          boxShadow: (theme) =>
+            theme.palette.mode === 'dark'
+              ? '0 4px 16px rgba(0, 0, 0, 0.2)'
+              : '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+        }}
+      >
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <DirectionsCarIcon color="primary" />
@@ -525,22 +607,30 @@ export default function ProfileScreen() {
             У вас пока нет добавленных машин. Добавьте авто, чтобы указывать его при публикации поездок.
           </Typography>
         ) : (
-          <Stack spacing={1}>
+          <Stack spacing={1.25}>
             {vehicles.map((v) => (
               <Paper
                 key={v.id}
                 variant="outlined"
                 sx={{
-                  p: 1.5,
-                  borderRadius: 2,
+                  p: 1.75,
+                  borderRadius: 3,
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   bgcolor: 'background.paper',
+                  borderColor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)',
+                  transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                  '&:hover': {
+                    borderColor: 'primary.light',
+                    boxShadow: '0 3px 10px rgba(0, 0, 0, 0.04)',
+                  },
                 }}
               >
                 <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 650 }}>
                     {v.brand}
                   </Typography>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.25 }}>
@@ -562,6 +652,7 @@ export default function ProfileScreen() {
                       fontFamily: 'monospace',
                       fontWeight: 700,
                       letterSpacing: 0.5,
+                      borderRadius: 2,
                       bgcolor: theme.palette.mode === 'dark' ? 'grey.800' : 'grey.200',
                       color: theme.palette.mode === 'dark' ? '#fff' : '#000',
                       border: theme.palette.mode === 'dark' ? '1px solid rgba(255,255,255,0.2)' : '1px solid #ccc',
@@ -589,7 +680,7 @@ export default function ProfileScreen() {
         )}
       </Paper>
 
-      <Stack spacing={1.5} sx={{ mt: 2 }}>
+      <Stack spacing={1.5} sx={{ mt: 3 }}>
         <Button
           fullWidth
           variant="outlined"
@@ -598,7 +689,7 @@ export default function ProfileScreen() {
           onClick={() => {
             window.location.hash = 'admin';
           }}
-          sx={{ py: 1, textTransform: 'none' }}
+          sx={{ py: 1.1, borderRadius: 2.5, textTransform: 'none', fontWeight: 600 }}
         >
           Панель администратора (/admin)
         </Button>
@@ -610,7 +701,7 @@ export default function ProfileScreen() {
           size="large"
           startIcon={<LogoutIcon />}
           onClick={logout}
-          sx={{ py: 1.2 }}
+          sx={{ py: 1.25, borderRadius: 2.5, fontWeight: 700 }}
         >
           Выйти
         </Button>

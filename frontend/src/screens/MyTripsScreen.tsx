@@ -18,34 +18,75 @@ export default function MyTripsScreen() {
   const driverRides = rides.filter((r) => r.driverId === user?.id);
 
   return (
-    <Box sx={{ pb: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Мои поездки
       </Typography>
 
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        variant="fullWidth"
+      <Paper
+        elevation={0}
         sx={{
-          mb: 2,
-          '& .MuiTab-root': { fontWeight: 600, textTransform: 'none' },
+          p: 0.5,
+          mb: 2.5,
+          borderRadius: 3,
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.04)',
         }}
       >
-        <Tab label={`Я пассажир (${passengerRides.length})`} />
-        <Tab label={`Я водитель (${driverRides.length})`} />
-      </Tabs>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          variant="fullWidth"
+          sx={{
+            minHeight: 40,
+            '& .MuiTabs-indicator': {
+              display: 'none',
+            },
+            '& .MuiTab-root': {
+              fontWeight: 650,
+              textTransform: 'none',
+              minHeight: 40,
+              py: 1,
+              borderRadius: 2.5,
+              fontSize: '0.875rem',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              color: 'text.secondary',
+              '&.Mui-selected': {
+                bgcolor: 'background.paper',
+                color: 'primary.main',
+                boxShadow: (theme) =>
+                  theme.palette.mode === 'dark'
+                    ? '0 2px 8px rgba(0, 0, 0, 0.4)'
+                    : '0 2px 8px rgba(15, 23, 42, 0.08)',
+              },
+            },
+          }}
+        >
+          <Tab label={`Я пассажир (${passengerRides.length})`} />
+          <Tab label={`Я водитель (${driverRides.length})`} />
+        </Tabs>
+      </Paper>
 
       {tab === 0 && (
         <>
           {passengerRides.length === 0 ? (
-            <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+            <Paper
+              variant="outlined"
+              sx={{
+                p: { xs: 3.5, sm: 4.5 },
+                borderRadius: 4,
+                textAlign: 'center',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                boxShadow: '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                 Вы ещё не присоединились ни к одной поездке. Перейдите во вкладку «Найти поездку», чтобы забронировать!
               </Typography>
             </Paper>
           ) : (
-            <Stack spacing={1.5}>
+            <Stack spacing={2}>
               {passengerRides.map((ride) => (
                 <RideCard
                   key={ride.id}
@@ -62,13 +103,23 @@ export default function MyTripsScreen() {
       {tab === 1 && (
         <>
           {driverRides.length === 0 ? (
-            <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+            <Paper
+              variant="outlined"
+              sx={{
+                p: { xs: 3.5, sm: 4.5 },
+                borderRadius: 4,
+                textAlign: 'center',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                boxShadow: '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
                 Вы ещё не создали ни одного маршрута. Перейдите во вкладку «Создать поездку», чтобы добавить!
               </Typography>
             </Paper>
           ) : (
-            <Stack spacing={1.5}>
+            <Stack spacing={2}>
               {driverRides.map((ride) => (
                 <RideCard key={ride.id} ride={ride} isDriver />
               ))}

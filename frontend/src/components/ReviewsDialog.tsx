@@ -101,11 +101,14 @@ export default function ReviewsDialog({
       maxWidth="sm"
       fullWidth
     >
-      <DialogTitle sx={{ m: 0, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+      <DialogTitle
+        component="div"
+        sx={{ m: 0, p: 2.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <Typography variant="h6" component="span" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
           Отзывы о водителе
         </Typography>
-        <IconButton size="small" onClick={onClose} aria-label="close">
+        <IconButton size="small" onClick={onClose} aria-label="close" sx={{ borderRadius: 2 }}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -115,12 +118,20 @@ export default function ReviewsDialog({
         <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
           <Avatar
             src={formatAvatarUrl(driverAvatarUrl)}
-            sx={{ bgcolor: 'primary.main', width: 48, height: 48, fontSize: 16 }}
+            sx={{
+              bgcolor: 'primary.main',
+              width: 50,
+              height: 50,
+              fontSize: 18,
+              boxShadow: '0 4px 14px rgba(0, 113, 227, 0.25)',
+              border: '2px solid',
+              borderColor: 'background.paper',
+            }}
           >
             {initials}
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }} noWrap>
               {driverName}
             </Typography>
             {hasRating ? (
@@ -129,7 +140,7 @@ export default function ReviewsDialog({
                 <Typography variant="body2" sx={{ fontWeight: 700 }}>
                   {ratingVal.toFixed(1)}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                   ({reviewsCount} {reviewsCount === 1 ? 'отзыв' : 'отзывов'})
                 </Typography>
               </Stack>
@@ -141,7 +152,7 @@ export default function ReviewsDialog({
           </Box>
         </Stack>
 
-        <Divider sx={{ mb: 2 }} />
+        <Divider sx={{ mb: 2.5 }} />
 
         {/* Содержимое списка отзывов */}
         {isLoading ? (
@@ -149,7 +160,7 @@ export default function ReviewsDialog({
             <CircularProgress size={32} />
           </Box>
         ) : error ? (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
             {error}
           </Alert>
         ) : reviews.length === 0 ? (
@@ -162,18 +173,28 @@ export default function ReviewsDialog({
         ) : (
           <Stack spacing={1.5}>
             {reviews.map((rev) => (
-              <Paper key={rev.id} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
+              <Paper
+                key={rev.id}
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  borderRadius: 3,
+                  borderColor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                  boxShadow: '0 1px 4px rgba(0, 0, 0, 0.02)',
+                }}
+              >
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 650 }}>
                     {rev.reviewer_first_name || rev.reviewer_username || 'Пассажир'}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                     {formatDateString(rev.created_at)}
                   </Typography>
                 </Stack>
                 <Rating value={Number(rev.rating)} readOnly size="small" sx={{ mb: 0.5 }} />
                 {rev.comment && (
-                  <Typography variant="body2" sx={{ color: 'text.primary', mt: 0.5 }}>
+                  <Typography variant="body2" sx={{ color: 'text.primary', mt: 0.5, lineHeight: 1.5 }}>
                     {rev.comment}
                   </Typography>
                 )}
@@ -183,8 +204,8 @@ export default function ReviewsDialog({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, py: 1.5 }}>
-        <Button onClick={onClose} variant="contained" color="inherit">
+      <DialogActions sx={{ px: 3, py: 1.75 }}>
+        <Button onClick={onClose} variant="contained" color="inherit" sx={{ borderRadius: 2.5, fontWeight: 600, px: 2.5 }}>
           Закрыть
         </Button>
       </DialogActions>
