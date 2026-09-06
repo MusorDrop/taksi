@@ -36,11 +36,14 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import GroupIcon from '@mui/icons-material/Group';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { DAY_FULL, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
 import { api } from '../api';
 import { useApp } from '../AppContext';
 import RouteMap from './RouteMap';
+import ReviewsDialog from './ReviewsDialog';
 
 /**
  * Преобразование дня недели (Mon, Tue...) в краткий русский формат (Пн, Вт...)
@@ -96,14 +99,19 @@ interface RideCardProps {
 }
 
 export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide, joinRide, deleteRide } = useApp();
+  const { kickPassenger, updateRide, joinRide, deleteRide, startRide, finishRide } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
+  const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [isReviewed, setIsReviewed] = useState<boolean>(false);
+
+  // Старт и завершение поездки водителем
+  const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Выбор дня для регулярной поездки
   const [joinDialogOpen, setJoinDialogOpen] = useState<boolean>(false);
@@ -129,6 +137,32 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
   const [isDeletingRide, setIsDeletingRide] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const handleStartRide = async (): Promise<void> => {
+    setIsActionLoading(true);
+    setActionError(null);
+    try {
+      await startRide(ride.id);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось начать поездку';
+      setActionError(message);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleFinishRide = async (): Promise<void> => {
+    setIsActionLoading(true);
+    setActionError(null);
+    try {
+      await finishRide(ride.id);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось завершить поездку';
+      setActionError(message);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const handleDeleteRide = async (): Promise<void> => {
     setIsDeletingRide(true);
     setDeleteError(null);
@@ -143,7 +177,19 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     }
   };
 
+  const isPlanned = ride.status === 'planned' || ride.status === 'scheduled' || !ride.status;
+  const isRideActive = ride.status === 'active';
   const isCompleted = ride.status === 'completed';
+  const isJoinDisabled = isRideActive || isCompleted;
+
+  const driverRatingVal = Number(ride.driverRating ?? ride.driver_rating ?? ride.averageRating ?? 0);
+  const driverReviewsCountVal = Number(ride.driverReviewsCount ?? ride.driver_reviews_count ?? 0);
+  const hasDriverReviews = driverReviewsCountVal > 0 && driverRatingVal > 0;
+
+  const handleOpenReviews = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    setReviewsDialogOpen(true);
+  };
 
   // Отправка отзыва о поездке через POST /api/reviews
   const handleSubmitReview = async (): Promise<void> => {
@@ -275,17 +321,61 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     >
       <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
-          <Avatar
-            src={avatarUrl}
-            alt={ride.driverName}
-            sx={{ bgcolor: 'primary.main', width: 40, height: 40, fontSize: 14 }}
+          <Box
+            onClick={handleOpenReviews}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.2,
+              cursor: 'pointer',
+              borderRadius: 2,
+              p: 0.5,
+              m: -0.5,
+              transition: 'background-color 0.15s',
+              '&:hover': {
+                bgcolor: 'action.hover',
+              },
+            }}
           >
-            {initials}
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle2" noWrap>
-              {ride.driverName}
-            </Typography>
+            <Avatar
+              src={avatarUrl}
+              alt={ride.driverName}
+              sx={{
+                bgcolor: 'primary.main',
+                width: 40,
+                height: 40,
+                fontSize: 14,
+                transition: 'transform 0.15s',
+                '&:hover': { transform: 'scale(1.05)' },
+              }}
+            >
+              {initials}
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="subtitle2" noWrap sx={{ fontWeight: 600 }}>
+                {ride.driverName}
+              </Typography>
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                {hasDriverReviews ? (
+                  <Stack direction="row" spacing={0.3} alignItems="center">
+                    <StarIcon sx={{ fontSize: 13, color: '#faaf00' }} />
+                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                      {driverRatingVal.toFixed(1)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ({driverReviewsCountVal})
+                    </Typography>
+                  </Stack>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">
+                    Нет отзывов
+                  </Typography>
+                )}
+              </Stack>
+            </Box>
+          </Box>
+
+          <Box sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
               <AccessTimeIcon sx={{ fontSize: 12, color: 'text.secondary' }} />
               <Typography variant="caption" color="text.secondary">
@@ -334,6 +424,37 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           </Box>
         </Stack>
 
+        {ride.description && (
+          <Box
+            sx={{
+              mt: 1.2,
+              p: 1,
+              borderRadius: 1.5,
+              bgcolor: 'action.hover',
+              borderLeft: '3px solid',
+              borderColor: 'primary.main',
+            }}
+          >
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', fontSize: '0.85rem' }}>
+              {ride.description}
+            </Typography>
+          </Box>
+        )}
+
+        {ride.tags && ride.tags.length > 0 && (
+          <Stack direction="row" spacing={0.6} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+            {ride.tags.map((tag) => (
+              <Chip
+                key={tag}
+                size="small"
+                label={tag}
+                variant="outlined"
+                sx={{ fontSize: '0.75rem', height: 22 }}
+              />
+            ))}
+          </Stack>
+        )}
+
         <Stack direction="row" spacing={0.5} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
           {!isRegular && (
             <Chip
@@ -360,6 +481,14 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               icon={<BoltIcon sx={{ fontSize: 14 }} />}
               label="+30% Пиковый спрос"
               color="warning"
+              sx={{ fontWeight: 600 }}
+            />
+          )}
+          {isRideActive && (
+            <Chip
+              size="small"
+              label="Поездка началась"
+              color="primary"
               sx={{ fontWeight: 600 }}
             />
           )}
@@ -529,7 +658,20 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                 )}
               </Box>
             ) : (
-              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+              <Stack
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                sx={{
+                  mb: 2,
+                  cursor: 'pointer',
+                  width: 'fit-content',
+                  p: 0.5,
+                  borderRadius: 1,
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}
+                onClick={handleOpenReviews}
+              >
                 <Avatar
                   src={avatarUrl}
                   alt={ride.driverName}
@@ -538,17 +680,39 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   {initials}
                 </Avatar>
                 <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {ride.driverName}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    @{ride.telegram}
-                  </Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    {hasDriverReviews ? (
+                      <Stack direction="row" spacing={0.3} alignItems="center">
+                        <StarIcon sx={{ fontSize: 12, color: '#faaf00' }} />
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                          {driverRatingVal.toFixed(1)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          ({driverReviewsCountVal})
+                        </Typography>
+                      </Stack>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        Нет отзывов
+                      </Typography>
+                    )}
+                    <Typography variant="caption" color="text.secondary">
+                      • @{ride.telegram}
+                    </Typography>
+                  </Stack>
                 </Box>
               </Stack>
             )}
 
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {actionError && (
+                <Alert severity="error" sx={{ width: '100%', mb: 1 }} onClose={() => setActionError(null)}>
+                  {actionError}
+                </Alert>
+              )}
               {isCompleted && !isDriver && (
                 <Button
                   fullWidth
@@ -567,36 +731,72 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               )}
               {isDriver && (
                 <Stack spacing={1} sx={{ width: '100%' }}>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    size="small"
-                    startIcon={<EditIcon />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditFrom(ride.from);
-                      setEditTo(ride.to);
-                      setEditTime(ride.time);
-                      setEditPrice(String(ride.price));
-                      setEditSeats(String(ride.totalSeats || 4));
-                      setEditDialogOpen(true);
-                    }}
-                  >
-                    Редактировать маршрут
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<DeleteOutlineIcon />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
-                    Отменить поездку
-                  </Button>
+                  {isPlanned && (
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                      startIcon={isActionLoading ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
+                      disabled={isActionLoading}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartRide();
+                      }}
+                    >
+                      Начать поездку
+                    </Button>
+                  )}
+                  {isRideActive && (
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="success"
+                      size="small"
+                      startIcon={isActionLoading ? <CircularProgress size={16} color="inherit" /> : <CheckCircleIcon />}
+                      disabled={isActionLoading}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFinishRide();
+                      }}
+                    >
+                      Завершить поездку
+                    </Button>
+                  )}
+                  {!isCompleted && (
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      size="small"
+                      startIcon={<EditIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditFrom(ride.from);
+                        setEditTo(ride.to);
+                        setEditTime(ride.time);
+                        setEditPrice(String(ride.price));
+                        setEditSeats(String(ride.totalSeats || 4));
+                        setEditDialogOpen(true);
+                      }}
+                    >
+                      Редактировать маршрут
+                    </Button>
+                  )}
+                  {!isCompleted && (
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      color="error"
+                      size="small"
+                      startIcon={<DeleteOutlineIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteDialogOpen(true);
+                      }}
+                    >
+                      Отменить поездку
+                    </Button>
+                  )}
                 </Stack>
               )}
               {!isDriver && (
@@ -642,14 +842,14 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   Отменить участие
                 </Button>
               )}
-              {!isDriver && !isPassenger && onJoin && !isCompleted && (
+              {!isDriver && !isPassenger && onJoin && !isJoinDisabled && (
                 <Button
                   fullWidth
-                  variant="outlined"
+                  variant="contained"
                   size="small"
                   onClick={handleJoinClick}
                 >
-                  Присоединиться
+                  Поехать вместе
                 </Button>
               )}
             </Stack>
@@ -870,6 +1070,17 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Модальное окно просмотра отзывов о водителе */}
+      <ReviewsDialog
+        open={reviewsDialogOpen}
+        onClose={() => setReviewsDialogOpen(false)}
+        driverId={ride.driverId}
+        driverName={ride.driverName}
+        driverAvatarUrl={ride.driverAvatarUrl}
+        driverRating={driverRatingVal}
+        driverReviewsCount={driverReviewsCountVal}
+      />
     </Card>
   );
 }

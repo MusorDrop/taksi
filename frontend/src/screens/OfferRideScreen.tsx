@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -26,580 +25,63 @@ import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import RouteMap from '../components/RouteMap';
-import { useApp } from '../AppContext';
-import type { Vehicle, VehiclesResponse, RoutePreviewResponse } from '../types';
-import { formatDateString, formatPrice } from '../utils';
-import { api } from '../api';
+import { formatPrice } from '../utils';
+import type { AddressOption } from '../hooks/useAddressSuggest';
+import {
+  useRideForm,
+  WEEK_DAYS,
+  AVAILABLE_TAGS,
+  AI_ACCENT,
+  getTodayDateString,
+} from '../hooks/useRideForm';
 
-/**
- * Опция подсказки адреса для выпадающего списка Autocomplete
- */
-export interface AddressOption {
-  label: string;
-  value: string;
-  subtitle?: string;
-}
-
-interface SuggestApiResponseItem {
-  title?: string | { text?: string };
-  subtitle?: string | { text?: string };
-  full_address?: string;
-  address?: string;
-  value?: string;
-  displayName?: string;
-}
-
-interface SuggestApiResponse {
-  suggestions?: SuggestApiResponseItem[];
-  results?: SuggestApiResponseItem[];
-}
-
-/**
- * Ожидание готовности Yandex Maps API 2.1 в объекте window
- */
-function getReadyYmaps(): Promise<Window['ymaps'] | null> {
-  if (typeof window === 'undefined') {
-    return Promise.resolve(null);
-  }
-  const ym = window.ymaps;
-  if (!ym) {
-    return Promise.resolve(null);
-  }
-  if (typeof ym.suggest === 'function') {
-    return Promise.resolve(ym);
-  }
-  if (typeof ym.ready === 'function') {
-    return new Promise((resolve) => {
-      ym.ready(() => {
-        resolve(window.ymaps ?? null);
-      });
-    });
-  }
-  return Promise.resolve(ym);
-}
-
-/**
- * Преобразование элемента ответа Yandex Suggest API в стандартизированный AddressOption
- */
-function parseSuggestItem(item: unknown): AddressOption | null {
-  if (typeof item === 'string') {
-    const trimmed = item.trim();
-    if (!trimmed) return null;
-    return { label: trimmed, value: trimmed };
-  }
-
-  if (item && typeof item === 'object') {
-    const obj = item as Record<string, unknown>;
-    const value = typeof obj.value === 'string' ? obj.value.trim() : '';
-    const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
-    const fullAddress = typeof obj.full_address === 'string' ? obj.full_address.trim() : '';
-    const address = typeof obj.address === 'string' ? obj.address.trim() : '';
-
-    let title = '';
-    if (typeof obj.title === 'string') {
-      title = obj.title.trim();
-    } else if (obj.title && typeof obj.title === 'object' && 'text' in obj.title) {
-      const textVal = (obj.title as { text?: unknown }).text;
-      if (typeof textVal === 'string') {
-        title = textVal.trim();
-      }
-    }
-
-    let subtitle = '';
-    if (typeof obj.subtitle === 'string') {
-      subtitle = obj.subtitle.trim();
-    } else if (obj.subtitle && typeof obj.subtitle === 'object' && 'text' in obj.subtitle) {
-      const textVal = (obj.subtitle as { text?: unknown }).text;
-      if (typeof textVal === 'string') {
-        subtitle = textVal.trim();
-      }
-    }
-
-    const resolvedValue = value || fullAddress || address || displayName || title;
-    const resolvedLabel = displayName || title || fullAddress || address || value;
-
-    if (!resolvedValue) return null;
-
-    return {
-      label: resolvedLabel,
-      value: resolvedValue,
-      subtitle: subtitle || undefined,
-    };
-  }
-
-  return null;
-}
-
-/**
- * Запрос подсказок адресов через window.ymaps.suggest (API 2.1) или резервный бэкенд /api/suggest
- */
-async function fetchAddressSuggestions(query: string, signal?: AbortSignal): Promise<AddressOption[]> {
-  const trimmed = query.trim();
-  if (trimmed.length < 2) {
-    return [];
-  }
-
-  // 1. Проверяем клиентский API 2.1 Яндекс.Карт (window.ymaps)
-  const ymaps2 = await getReadyYmaps();
-  if (ymaps2 && typeof ymaps2.suggest === 'function') {
-    try {
-      const results = await ymaps2.suggest(trimmed, { results: 7 });
-      if (Array.isArray(results) && results.length > 0) {
-        const options: AddressOption[] = [];
-        for (const item of results) {
-          const parsed = parseSuggestItem(item);
-          if (parsed && !options.some((opt) => opt.value === parsed.value)) {
-            options.push(parsed);
-          }
-        }
-        if (options.length > 0) {
-          return options;
-        }
-      }
-    } catch (err: unknown) {
-      console.warn('Ошибка вызова window.ymaps.suggest:', err);
-    }
-  }
-
-  // 2. Резервный запрос к бэкенду /api/suggest
-  try {
-    const res = await api.get<SuggestApiResponse | SuggestApiResponseItem[]>(
-      `/api/suggest?text=${encodeURIComponent(trimmed)}`,
-      { signal }
-    );
-    if (res) {
-      const list = Array.isArray(res) ? res : (res.suggestions || res.results || []);
-      const options: AddressOption[] = [];
-      for (const item of list) {
-        const parsed = parseSuggestItem(item);
-        if (parsed && !options.some((opt) => opt.value === parsed.value)) {
-          options.push(parsed);
-        }
-      }
-      return options;
-    }
-  } catch {
-    // При недоступности бэкенда или отмене запроса возвращаем пустой список
-  }
-
-  return [];
-}
-
-/**
- * Получение текущей даты в формате YYYY-MM-DD для поля ввода даты
- */
-
-function getTodayDateString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Получение времени выезда по умолчанию (текущее время + 1 час) в формате HH:mm
- */
-function getDefaultTimeString(): string {
-  const target = new Date(Date.now() + 60 * 60 * 1000);
-  const hours = String(target.getHours()).padStart(2, '0');
-  const minutes = String(target.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-}
-
-/**
- * Получение даты выезда по умолчанию в формате YYYY-MM-DD (соответствует сдвигу времени +1 час)
- */
-function getDefaultDateString(): string {
-  const target = new Date(Date.now() + 60 * 60 * 1000);
-  const year = target.getFullYear();
-  const month = String(target.getMonth() + 1).padStart(2, '0');
-  const day = String(target.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-// Indigo/violet accent palette for the AI recommendation surface — kept local
-// to this screen so the rest of the app's MUI theme (blue) is untouched.
-const AI_ACCENT = {
-  bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)',
-  border: 'rgba(99, 102, 241, 0.22)',
-  iconBg: 'rgba(99, 102, 241, 0.12)',
-  iconColor: '#6366f1',
-  text: '#4338ca',
-  subtleText: '#6d28d9',
-  button: '#6366f1',
-  buttonHover: '#4f46e5',
-};
-
-interface OfferRideScreenProps {
+export interface OfferRideScreenProps {
   onNavigateToProfile?: () => void;
 }
 
+/**
+ * Экран предложения новой поездки водителем с интерактивной картой и автодополнением адресов
+ */
 export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreenProps) {
-  const { addRide, user } = useApp();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [fromInputValue, setFromInputValue] = useState<string>('');
-  const [toInputValue, setToInputValue] = useState<string>('');
-  const [fromOptions, setFromOptions] = useState<AddressOption[]>([]);
-  const [toOptions, setToOptions] = useState<AddressOption[]>([]);
-  const [isFromLoading, setIsFromLoading] = useState<boolean>(false);
-  const [isToLoading, setIsToLoading] = useState<boolean>(false);
-  const [rideType, setRideType] = useState<'one_off' | 'regular'>('one_off');
-  const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
-  const [date, setDate] = useState<string>(getDefaultDateString);
-  const [time, setTime] = useState<string>(getDefaultTimeString);
-  const [telegram, setTelegram] = useState(user?.telegram ?? '');
-  const [price, setPrice] = useState<string>('');
-  const [success, setSuccess] = useState(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
-  const [isVehiclesLoading, setIsVehiclesLoading] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-    };
-  }, []);
-
-  // Загрузка доступных автомобилей пользователя для привязки к поездке
-  useEffect(() => {
-    const controller = new AbortController();
-    let isMounted = true;
-
-    async function loadVehicles(): Promise<void> {
-      try {
-        const res = await api.get<VehiclesResponse>('/api/vehicles', {
-          signal: controller.signal,
-        });
-        if (isMounted && res?.vehicles) {
-          setVehicles(res.vehicles);
-          if (res.vehicles.length > 0) {
-            setSelectedVehicleId(res.vehicles[0].id);
-          }
-        }
-      } catch {
-        // При недоступности бэкенда или отмене запроса форма работает без выбора автомобиля
-      } finally {
-        if (isMounted) {
-          setIsVehiclesLoading(false);
-        }
-      }
-    }
-
-    loadVehicles();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, []);
-
-  const hasNoVehicles = !isVehiclesLoading && vehicles.length === 0;
-
-  const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
-  const [routeDistance, setRouteDistance] = useState<number | null>(null);
-  const [routeDuration, setRouteDuration] = useState<number | null>(null);
-  const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
-  const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
-  const [recommendedPrice, setRecommendedPrice] = useState<number>(150);
-  const [isPeakDemand, setIsPeakDemand] = useState<boolean>(false);
-  const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
-
-  // Загрузка подсказок адресов для поля 'Откуда'
-  useEffect(() => {
-    const trimmed = fromInputValue.trim();
-    if (trimmed.length < 2) {
-      setFromOptions([]);
-      setIsFromLoading(false);
-      return;
-    }
-
-    // Если значение в поле совпадает с уже выбранным адресом, повторный поиск не выполняется
-    if (trimmed === from.trim() && from.trim().length > 0) {
-      setIsFromLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    const controller = new AbortController();
-    setIsFromLoading(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const results = await fetchAddressSuggestions(trimmed, controller.signal);
-        if (isMounted) {
-          setFromOptions(results);
-        }
-      } catch {
-        if (isMounted) {
-          setFromOptions([]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsFromLoading(false);
-        }
-      }
-    }, 300);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [fromInputValue, from]);
-
-  // Загрузка подсказок адресов для поля 'Куда'
-  useEffect(() => {
-    const trimmed = toInputValue.trim();
-    if (trimmed.length < 2) {
-      setToOptions([]);
-      setIsToLoading(false);
-      return;
-    }
-
-    // Если значение в поле совпадает с уже выбранным адресом, повторный поиск не выполняется
-    if (trimmed === to.trim() && to.trim().length > 0) {
-      setIsToLoading(false);
-      return;
-    }
-
-    let isMounted = true;
-    const controller = new AbortController();
-    setIsToLoading(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const results = await fetchAddressSuggestions(trimmed, controller.signal);
-        if (isMounted) {
-          setToOptions(results);
-        }
-      } catch {
-        if (isMounted) {
-          setToOptions([]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsToLoading(false);
-        }
-      }
-    }, 300);
-
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [toInputValue, to]);
-
-  // Запрос реального дорожного маршрута, полилинии и расчетной цены от бэкенда
-  useEffect(() => {
-    const trimmedFrom = from.trim();
-    const trimmedTo = to.trim();
-
-    if (trimmedFrom.length < 2 || trimmedTo.length < 2) {
-      setRoutePolyline(null);
-      setRouteDistance(null);
-      setRouteDuration(null);
-      setStartCoords(null);
-      setEndCoords(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsRouteLoading(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const query = `/api/rides/route-preview?from=${encodeURIComponent(trimmedFrom)}&to=${encodeURIComponent(trimmedTo)}&time=${encodeURIComponent(time)}`;
-        const res = await api.get<RoutePreviewResponse>(query, {
-          signal: controller.signal,
-        });
-
-        if (res) {
-          const rawPoly = res.polyline ?? res.route_polyline;
-          let coords: [number, number][] | null = null;
-          if (Array.isArray(rawPoly)) {
-            coords = rawPoly as [number, number][];
-          } else if (rawPoly && typeof rawPoly === 'object' && Array.isArray(rawPoly.coordinates)) {
-            coords = rawPoly.coordinates;
-          }
-
-          if (coords) {
-            setRoutePolyline(coords);
-          }
-
-          const dist = res.distance_km ?? res.distanceKm ?? 5.0;
-          setRouteDistance(dist);
-
-          const dur = res.duration_min ?? res.durationMin ?? Math.round(dist * 2.2);
-          setRouteDuration(dur);
-
-          const sLon = res.start?.lon ?? res.from?.lon ?? res.start_coords?.lon;
-          const sLat = res.start?.lat ?? res.from?.lat ?? res.start_coords?.lat;
-          if (sLon !== undefined && sLat !== undefined) {
-            setStartCoords([sLon, sLat]);
-          }
-
-          const eLon = res.end?.lon ?? res.to?.lon ?? res.end_coords?.lon;
-          const eLat = res.end?.lat ?? res.to?.lat ?? res.end_coords?.lat;
-          if (eLon !== undefined && eLat !== undefined) {
-            setEndCoords([eLon, eLat]);
-          }
-
-          const priceVal = res.price ?? res.base_price ?? 150;
-          setRecommendedPrice(Math.round(priceVal / 5) * 5);
-          setIsPeakDemand(Boolean(res.is_peak ?? res.isPeak));
-        }
-      } catch {
-        // Игнорируем отмененные запросы
-      } finally {
-        setIsRouteLoading(false);
-      }
-    }, 350);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [from, to, time]);
-
-  const parsedPrice = price.trim() === '' ? null : Number(price);
-  const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
-  const isDateOrDaysValid = rideType === 'one_off' ? Boolean(date) : regularDays.length > 0;
-  const canSubmit = Boolean(
-    !hasNoVehicles &&
-    from.trim() &&
-    to.trim() &&
-    telegram.trim() &&
-    isPriceValid &&
-    isDateOrDaysValid &&
-    time
-  );
-
-  const handleFromChange = (
-    _event: unknown,
-    newValue: string | AddressOption | null,
-  ): void => {
-    if (!newValue) {
-      setFrom('');
-      setFromInputValue('');
-      setFromOptions([]);
-      return;
-    }
-    const val = typeof newValue === 'string' ? newValue.trim() : newValue.value.trim();
-    const label = typeof newValue === 'string' ? newValue.trim() : (newValue.label || newValue.value).trim();
-    setFrom(val);
-    setFromInputValue(label);
-  };
-
-  const handleFromBlur = (): void => {
-    const trimmed = fromInputValue.trim();
-    if (trimmed !== from) {
-      setFrom(trimmed);
-    }
-  };
-
-  const handleToChange = (
-    _event: unknown,
-    newValue: string | AddressOption | null,
-  ): void => {
-    if (!newValue) {
-      setTo('');
-      setToInputValue('');
-      setToOptions([]);
-      return;
-    }
-    const val = typeof newValue === 'string' ? newValue.trim() : newValue.value.trim();
-    const label = typeof newValue === 'string' ? newValue.trim() : (newValue.label || newValue.value).trim();
-    setTo(val);
-    setToInputValue(label);
-  };
-
-  const handleToBlur = (): void => {
-    const trimmed = toInputValue.trim();
-    if (trimmed !== to) {
-      setTo(trimmed);
-    }
-  };
-
-  const handleApplyRecommendation = (): void => {
-    setPrice(String(recommendedPrice));
-  };
-
-  const handleDayToggle = (day: string): void => {
-    setRegularDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
-  };
-
-  const handleSubmit = async (e: FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (!canSubmit || parsedPrice === null || isSubmitting) return;
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      const departureDate = new Date(`${date}T${time}`);
-      const departureIso = !isNaN(departureDate.getTime())
-        ? departureDate.toISOString()
-        : new Date().toISOString();
-
-      const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
-      const totalSeats = selectedVehicle?.seats || 4;
-
-      await addRide({
-        from,
-        to,
-        dateFormatted: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
-        dateString: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
-        departure_time: departureIso,
-        departureTime: departureIso,
-        time,
-        telegram: telegram.replace('@', ''),
-        price: parsedPrice,
-        distanceKm: routeDistance ?? 5.0,
-        isPeak: isPeakDemand,
-        vehicleId: selectedVehicleId || undefined,
-        totalSeats,
-        rideType,
-        ride_type: rideType,
-        regularDays: rideType === 'regular' ? regularDays.join(', ') : null,
-        regular_days: rideType === 'regular' ? regularDays.join(', ') : null,
-      });
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-      setSuccess(true);
-      setFrom('');
-      setTo('');
-      setFromInputValue('');
-      setToInputValue('');
-      setFromOptions([]);
-      setToOptions([]);
-      setDate(getDefaultDateString());
-      setTime(getDefaultTimeString());
-      setPrice('');
-      setRoutePolyline(null);
-      setRouteDistance(null);
-      setRouteDuration(null);
-      setStartCoords(null);
-      setEndCoords(null);
-      successTimerRef.current = setTimeout(() => {
-        setSuccess(false);
-        successTimerRef.current = null;
-      }, 3000);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Не удалось опубликовать поездку на сервере';
-      setSubmitError(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const {
+    fromSuggest,
+    toSuggest,
+    rideType,
+    setRideType,
+    regularDays,
+    handleDayToggle,
+    date,
+    setDate,
+    time,
+    setTime,
+    telegram,
+    setTelegram,
+    price,
+    setPrice,
+    description,
+    setDescription,
+    tags,
+    handleTagToggle,
+    vehicles,
+    selectedVehicleId,
+    setSelectedVehicleId,
+    hasNoVehicles,
+    isSubmitting,
+    submitError,
+    setSubmitError,
+    success,
+    canSubmit,
+    routePolyline,
+    routeDistance,
+    routeDuration,
+    startCoords,
+    endCoords,
+    recommendedPrice,
+    isPeakDemand,
+    isRouteLoading,
+    handleApplyRecommendation,
+    handleSubmit,
+  } = useRideForm();
 
   return (
     <Box sx={{ pb: 2 }}>
@@ -651,43 +133,55 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
           <Autocomplete<AddressOption | string, false, false, true>
             freeSolo
             disabled={hasNoVehicles}
-            options={fromOptions}
-            loading={isFromLoading}
+            options={fromSuggest.options}
+            loading={fromSuggest.isLoading}
             filterOptions={(x) => x}
-            value={from || null}
-            inputValue={fromInputValue}
-            onInputChange={(_event, newInputValue, reason) => {
-              setFromInputValue(newInputValue);
-              if (reason === 'clear') {
-                setFrom('');
-                setFromOptions([]);
-              }
-            }}
-            onChange={handleFromChange}
-            onBlur={handleFromBlur}
+            value={fromSuggest.value || null}
+            inputValue={fromSuggest.inputValue}
+            open={
+              fromSuggest.isOpen &&
+              Boolean(fromSuggest.inputValue.trim() && (fromSuggest.options.length > 0 || fromSuggest.isLoading))
+            }
+            onOpen={() => fromSuggest.setIsOpen(true)}
+            onClose={() => fromSuggest.setIsOpen(false)}
+            onInputChange={fromSuggest.handleInputChange}
+            onChange={fromSuggest.handleChange}
+            onBlur={fromSuggest.handleBlur}
             getOptionLabel={(option) =>
               typeof option === 'string' ? option : option.label || option.value || ''
             }
             isOptionEqualToValue={(option, val) => {
-              const optVal = typeof option === 'string' ? option : option.value;
-              const targetVal = typeof val === 'string' ? val : val.value;
-              return (
-                optVal === targetVal ||
-                (typeof option !== 'string' && option.label === targetVal)
-              );
+              const optVal = typeof option === 'string' ? option : option.value || option.label;
+              const targetVal = typeof val === 'string' ? val : val.value || val.label;
+              return optVal === targetVal;
             }}
             noOptionsText={
-              fromInputValue.trim().length < 2
+              fromSuggest.inputValue.trim().length < 2
                 ? 'Введите не менее 2 символов'
-                : 'Адрес не найден'
+                : 'Адрес в Екатеринбурге не найден'
             }
-            loadingText="Поиск адресов..."
+            loadingText="Поиск адресов в Екатеринбурге..."
+            slotProps={{
+              popper: {
+                sx: { zIndex: 1500 },
+                modifiers: [
+                  {
+                    name: 'preventOverflow',
+                    options: { boundary: 'clippingParents' },
+                  },
+                ],
+              },
+              paper: {
+                elevation: 6,
+                sx: { borderRadius: 2, mt: 0.5, maxHeight: 280 },
+              },
+            }}
             renderInput={(params) => (
               <TextField
                 {...params}
                 fullWidth
                 label="Откуда (Точка А)"
-                placeholder="Например: Центральная библиотека"
+                placeholder="Например: проспект Ленина 51 или Мира 19"
                 InputProps={{
                   ...params.InputProps,
                   startAdornment: (
@@ -700,7 +194,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                   ),
                   endAdornment: (
                     <>
-                      {isFromLoading ? (
+                      {fromSuggest.isLoading ? (
                         <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
                       ) : null}
                       {params.InputProps.endAdornment}
@@ -737,43 +231,55 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
           <Autocomplete<AddressOption | string, false, false, true>
             freeSolo
             disabled={hasNoVehicles}
-            options={toOptions}
-            loading={isToLoading}
+            options={toSuggest.options}
+            loading={toSuggest.isLoading}
             filterOptions={(x) => x}
-            value={to || null}
-            inputValue={toInputValue}
-            onInputChange={(_event, newInputValue, reason) => {
-              setToInputValue(newInputValue);
-              if (reason === 'clear') {
-                setTo('');
-                setToOptions([]);
-              }
-            }}
-            onChange={handleToChange}
-            onBlur={handleToBlur}
+            value={toSuggest.value || null}
+            inputValue={toSuggest.inputValue}
+            open={
+              toSuggest.isOpen &&
+              Boolean(toSuggest.inputValue.trim() && (toSuggest.options.length > 0 || toSuggest.isLoading))
+            }
+            onOpen={() => toSuggest.setIsOpen(true)}
+            onClose={() => toSuggest.setIsOpen(false)}
+            onInputChange={toSuggest.handleInputChange}
+            onChange={toSuggest.handleChange}
+            onBlur={toSuggest.handleBlur}
             getOptionLabel={(option) =>
               typeof option === 'string' ? option : option.label || option.value || ''
             }
             isOptionEqualToValue={(option, val) => {
-              const optVal = typeof option === 'string' ? option : option.value;
-              const targetVal = typeof val === 'string' ? val : val.value;
-              return (
-                optVal === targetVal ||
-                (typeof option !== 'string' && option.label === targetVal)
-              );
+              const optVal = typeof option === 'string' ? option : option.value || option.label;
+              const targetVal = typeof val === 'string' ? val : val.value || val.label;
+              return optVal === targetVal;
             }}
             noOptionsText={
-              toInputValue.trim().length < 2
+              toSuggest.inputValue.trim().length < 2
                 ? 'Введите не менее 2 символов'
-                : 'Адрес не найден'
+                : 'Адрес в Екатеринбурге не найден'
             }
-            loadingText="Поиск адресов..."
+            loadingText="Поиск адресов в Екатеринбурге..."
+            slotProps={{
+              popper: {
+                sx: { zIndex: 1500 },
+                modifiers: [
+                  {
+                    name: 'preventOverflow',
+                    options: { boundary: 'clippingParents' },
+                  },
+                ],
+              },
+              paper: {
+                elevation: 6,
+                sx: { borderRadius: 2, mt: 0.5, maxHeight: 280 },
+              },
+            }}
             renderInput={(params) => (
               <TextField
                 {...params}
                 fullWidth
                 label="Куда (Точка Б)"
-                placeholder="Например: Северный кампус"
+                placeholder="Например: Кампус Новокольцовский"
                 InputProps={{
                   ...params.InputProps,
                   startAdornment: (
@@ -786,7 +292,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                   ),
                   endAdornment: (
                     <>
-                      {isToLoading ? (
+                      {toSuggest.isLoading ? (
                         <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
                       ) : null}
                       {params.InputProps.endAdornment}
@@ -820,8 +326,8 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
           />
 
           <RouteMap
-            from={from || 'Точка А'}
-            to={to || 'Точка Б'}
+            from={fromSuggest.value || 'Точка А'}
+            to={toSuggest.value || 'Точка Б'}
             polyline={routePolyline}
             startCoords={startCoords}
             endCoords={endCoords}
@@ -923,7 +429,6 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          {/* Manual price input — the driver always has the final say */}
           <TextField
             fullWidth
             label="Ваша цена за место (₽)"
@@ -944,7 +449,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          {/* AI Smart Recommendation box — sits directly under the price field */}
+          {/* Карточка рекомендуемой цены с расчетом дистанции */}
           <Paper
             variant="outlined"
             sx={{
@@ -1029,6 +534,42 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
               </Select>
             </FormControl>
           )}
+
+          {/* Панель выбора тегов поездки (Chips) */}
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+              Особенности поездки
+            </Typography>
+            <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+              {AVAILABLE_TAGS.map((tag) => {
+                const isSelected = tags.includes(tag);
+                return (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    clickable={!hasNoVehicles}
+                    disabled={hasNoVehicles}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    onClick={() => handleTagToggle(tag)}
+                    sx={{ fontWeight: 500 }}
+                  />
+                );
+              })}
+            </Stack>
+          </Box>
+
+          {/* Многострочное текстовое поле "Примечания к маршруту" (description) */}
+          <TextField
+            fullWidth
+            label="Примечания к маршруту"
+            placeholder="Например: встречаемся у главного входа, багажник свободен, едем без остановок"
+            multiline
+            rows={3}
+            disabled={hasNoVehicles}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
 
           <TextField
             fullWidth

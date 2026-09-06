@@ -21,7 +21,7 @@ router.param('id', (req, res, next, id) => {
 // Допустимые роли пользователей
 const ALLOWED_ROLES = ['driver', 'passenger', 'both'];
 // Допустимые статусы поездок
-const ALLOWED_RIDE_STATUSES = ['scheduled', 'in_progress', 'completed', 'cancelled'];
+const ALLOWED_RIDE_STATUSES = ['planned', 'active', 'completed', 'cancelled', 'scheduled', 'in_progress'];
 
 // --- ПОЛЬЗОВАТЕЛИ (USERS) ---
 

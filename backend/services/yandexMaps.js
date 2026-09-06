@@ -1,5 +1,21 @@
 const pool = require('../db');
 
+// Координатные границы Екатеринбурга по умолчанию (долгота lon, широта lat)
+// Юго-Запад: [56.60, 60.20], Северо-Восток: [57.05, 61.05]
+const EKATERINBURG_BOUNDS = {
+    minLon: 60.20,
+    minLat: 56.60,
+    maxLon: 61.05,
+    maxLat: 57.05,
+    // Формат bbox для Yandex Suggest HTTP API: lon1,lat1~lon2,lat2
+    bbox: '60.20,56.60~61.05,57.05',
+    // Формат boundedBy для Yandex Maps API 2.1: [[lat1, lon1], [lat2, lon2]]
+    boundedBy: [
+        [56.60, 60.20],
+        [57.05, 61.05]
+    ]
+};
+
 // Ключи локаций Екатеринбурга по умолчанию (долгота lon, широта lat)
 const KNOWN_LOCATIONS = {
     'уралмаш': { lon: 60.5975, lat: 56.8885, name: 'Екатеринбург, район Уралмаш' },
@@ -9,7 +25,15 @@ const KNOWN_LOCATIONS = {
     'мира': { lon: 60.6534, lat: 56.8439, name: 'Екатеринбург, улица Мира, 19' },
     'втузгородок': { lon: 60.6530, lat: 56.8430, name: 'Екатеринбург, Втузгородок' },
     'академический': { lon: 60.5186, lat: 56.7865, name: 'Екатеринбург, Академический' },
-    'жби': { lon: 60.6860, lat: 56.8285, name: 'Екатеринбург, ЖБИ' }
+    'жби': { lon: 60.6860, lat: 56.8285, name: 'Екатеринбург, ЖБИ' },
+    'ленина': { lon: 60.6120, lat: 56.8390, name: 'Екатеринбург, проспект Ленина' },
+    'кольцово': { lon: 60.8043, lat: 56.7431, name: 'Екатеринбург, Аэропорт Кольцово' },
+    'вокзал': { lon: 60.6055, lat: 56.8584, name: 'Екатеринбург, Железнодорожный вокзал' },
+    'ботаника': { lon: 60.6300, lat: 56.7970, name: 'Екатеринбург, Ботанический' },
+    'виз': { lon: 60.5400, lat: 56.8330, name: 'Екатеринбург, ВИЗ' },
+    'пионерский': { lon: 60.6400, lat: 56.8600, name: 'Екатеринбург, Пионерский' },
+    'гринвич': { lon: 60.5980, lat: 56.8295, name: 'Екатеринбург, ТРЦ Гринвич' },
+    'мега': { lon: 60.4800, lat: 56.8270, name: 'Екатеринбург, ТЦ МЕГА' }
 };
 
 const DEFAULT_COORDS = { lon: 60.6057, lat: 56.8389, name: 'Екатеринбург' };
@@ -256,20 +280,59 @@ async function reverseGeocode(latitude, longitude) {
 }
 
 /**
- * Получение подсказок адресов через Yandex Suggest API с резервным локальным поиском
+ * Преобразование параметра boundedBy в строку bbox (lon1,lat1~lon2,lat2)
+ * @param {string|Array} [boundedBy] - Входные границы
+ * @returns {string} Строка bbox для Yandex API
+ */
+function resolveSuggestBbox(boundedBy) {
+    if (!boundedBy) {
+        return EKATERINBURG_BOUNDS.bbox;
+    }
+    if (typeof boundedBy === 'string') {
+        const trimmed = boundedBy.trim();
+        if (trimmed.includes('~')) {
+            return trimmed;
+        }
+        const parts = trimmed.split(',').map((p) => parseFloat(p.trim())).filter((n) => !isNaN(n));
+        if (parts.length === 4) {
+            if (parts[0] >= 50 && parts[0] <= 60) {
+                const [lat1, lon1, lat2, lon2] = parts;
+                return `${lon1},${lat1}~${lon2},${lat2}`;
+            }
+            const [lon1, lat1, lon2, lat2] = parts;
+            return `${lon1},${lat1}~${lon2},${lat2}`;
+        }
+    }
+    if (Array.isArray(boundedBy) && boundedBy.length === 2) {
+        const [pt1, pt2] = boundedBy;
+        if (Array.isArray(pt1) && Array.isArray(pt2) && pt1.length >= 2 && pt2.length >= 2) {
+            const [lat1, lon1] = pt1;
+            const [lat2, lon2] = pt2;
+            return `${lon1},${lat1}~${lon2},${lat2}`;
+        }
+    }
+    return EKATERINBURG_BOUNDS.bbox;
+}
+
+/**
+ * Получение подсказок адресов через Yandex Suggest API с жесткими границами Екатеринбурга и резервным поиском
  * @param {string} query - Поисковая подстрока
+ * @param {string|Array} [boundedBy] - Границы поиска (по умолчанию Екатеринбург)
  * @returns {Promise<Array<{ title: string, subtitle: string, full_address: string, address: string }>>}
  */
-async function suggestAddress(query) {
+async function suggestAddress(query, boundedBy) {
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
         return [];
     }
 
     const trimmed = query.trim();
+    const bbox = resolveSuggestBbox(boundedBy);
     const apiKey = process.env.YANDEX_SUGGEST_API_KEY;
+
     if (apiKey) {
         try {
-            const url = `https://suggest-maps.yandex.ru/v1/suggest?apikey=${apiKey}&text=${encodeURIComponent(trimmed)}&lang=ru_RU`;
+            // Жесткие параметры поиска для Екатеринбурга (bbox + strict_bounds=1)
+            const url = `https://suggest-maps.yandex.ru/v1/suggest?apikey=${apiKey}&text=${encodeURIComponent(trimmed)}&lang=ru_RU&bbox=${bbox}&strict_bounds=1`;
             const response = await fetchWithTimeout(url);
             if (response.ok) {
                 const data = await response.json();
@@ -290,7 +353,36 @@ async function suggestAddress(query) {
         }
     }
 
-    // Резервный поиск по известным локациям
+    // Резервный поиск через Geocoder API в границах Екатеринбурга, если Suggest вернул 0 результатов
+    const geocodeApiKey = process.env.YANDEX_MAPS_API_KEY;
+    if (geocodeApiKey) {
+        try {
+            const geocodeUrl = `https://geocode-maps.yandex.ru/1.x/?apikey=${geocodeApiKey}&geocode=${encodeURIComponent('Екатеринбург, ' + trimmed)}&bbox=${bbox}&rspn=1&format=json&results=7`;
+            const geoResponse = await fetchWithTimeout(geocodeUrl);
+            if (geoResponse.ok) {
+                const geoData = await geoResponse.json();
+                const members = geoData?.response?.GeoObjectCollection?.featureMember;
+                if (Array.isArray(members) && members.length > 0) {
+                    return members.map((m) => {
+                        const obj = m.GeoObject;
+                        const full = obj?.metaDataProperty?.GeocoderMetaData?.text || obj?.name || trimmed;
+                        const name = obj?.name || full;
+                        const description = obj?.description || 'Екатеринбург, Свердловская область';
+                        return {
+                            title: name,
+                            subtitle: description,
+                            full_address: full,
+                            address: full
+                        };
+                    });
+                }
+            }
+        } catch (err) {
+            console.warn('Предупреждение: ошибка резервного геокодирования для подсказок:', err.message);
+        }
+    }
+
+    // Резервный поиск по известным локациям Екатеринбурга
     const lower = trimmed.toLowerCase();
     const suggestions = [];
     for (const loc of Object.values(KNOWN_LOCATIONS)) {
@@ -422,5 +514,7 @@ module.exports = {
     calculateTripPrice,
     isPeakHour,
     getFromGeocodeCache,
-    saveToGeocodeCache
+    saveToGeocodeCache,
+    EKATERINBURG_BOUNDS,
+    KNOWN_LOCATIONS
 };
