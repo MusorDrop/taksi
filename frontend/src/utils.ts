@@ -139,25 +139,35 @@ export function resolveCoordsToName(lon?: number, lat?: number, fallbackName: st
 }
 
 /**
- * Преобразование относительного пути к аватару в полный URL бэкенда
+ * Преобразование относительного пути к аватару в полный URL бэкенда с добавлением параметра для сброса кэша
  * @param url - Путь к аватару
- * @returns Полный URL аватара или undefined
+ * @returns Полный URL аватара с параметром сброса кэша или undefined
  */
 export function formatAvatarUrl(url?: string | null): string | undefined {
   if (!url || typeof url !== 'string' || url.trim() === '') {
     return undefined;
   }
   const trimmed = url.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
-  if (trimmed.startsWith('/uploads/')) {
-    return `http://localhost:3000${trimmed}`;
+
+  let fullUrl = trimmed;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    fullUrl = trimmed;
+  } else if (trimmed.startsWith('/uploads/')) {
+    fullUrl = `http://localhost:3000${trimmed}`;
+  } else if (trimmed.startsWith('uploads/')) {
+    fullUrl = `http://localhost:3000/${trimmed}`;
   }
-  if (trimmed.startsWith('uploads/')) {
-    return `http://localhost:3000/${trimmed}`;
+
+  // Обновление существующего cache-buster параметра или добавление нового
+  if (/[?&]t=\d+/.test(fullUrl)) {
+    return fullUrl.replace(/([?&]t=)\d+/, `$1${Date.now()}`);
   }
-  return trimmed;
+
+  const separator = fullUrl.includes('?') ? '&' : '?';
+  return `${fullUrl}${separator}t=${Date.now()}`;
 }
 
 /**

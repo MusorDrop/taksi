@@ -61,6 +61,11 @@ function AppContent() {
   const [tab, setTab] = useState<TabKey>('find');
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => checkIsAdminRoute());
 
+  // Прокрутка страницы наверх при смене вкладки
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [tab]);
+
   useEffect(() => {
     const handleLocationChange = () => {
       setIsAdminRoute(checkIsAdminRoute());

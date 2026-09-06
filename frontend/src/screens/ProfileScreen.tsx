@@ -684,19 +684,6 @@ export default function ProfileScreen() {
         <Button
           fullWidth
           variant="outlined"
-          color="secondary"
-          size="medium"
-          onClick={() => {
-            window.location.hash = 'admin';
-          }}
-          sx={{ py: 1.1, borderRadius: 2.5, textTransform: 'none', fontWeight: 600 }}
-        >
-          Панель администратора (/admin)
-        </Button>
-
-        <Button
-          fullWidth
-          variant="outlined"
           color="error"
           size="large"
           startIcon={<LogoutIcon />}
