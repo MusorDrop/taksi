@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -26,8 +26,8 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import RouteMap from '../components/RouteMap';
 import { useApp } from '../AppContext';
-import type { Vehicle, VehiclesResponse } from '../types';
-import { estimateDistance, formatDateString, formatPrice, getAiRecommendedPrice, isPeakTime } from '../utils';
+import type { Vehicle, VehiclesResponse, RoutePreviewResponse } from '../types';
+import { formatDateString, formatPrice } from '../utils';
 import { api } from '../api';
 
 /**
@@ -38,6 +38,27 @@ function getTodayDateString(): string {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Получение времени выезда по умолчанию (текущее время + 1 час) в формате HH:mm
+ */
+function getDefaultTimeString(): string {
+  const target = new Date(Date.now() + 60 * 60 * 1000);
+  const hours = String(target.getHours()).padStart(2, '0');
+  const minutes = String(target.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Получение даты выезда по умолчанию в формате YYYY-MM-DD (соответствует сдвигу времени +1 час)
+ */
+function getDefaultDateString(): string {
+  const target = new Date(Date.now() + 60 * 60 * 1000);
+  const year = target.getFullYear();
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const day = String(target.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -66,8 +87,8 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
   const [to, setTo] = useState('');
   const [rideType, setRideType] = useState<'one_off' | 'regular'>('one_off');
   const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
-  const [date, setDate] = useState<string>(getTodayDateString);
-  const [time, setTime] = useState('08:00');
+  const [date, setDate] = useState<string>(getDefaultDateString);
+  const [time, setTime] = useState<string>(getDefaultTimeString);
   const [telegram, setTelegram] = useState(user?.telegram ?? '');
   const [price, setPrice] = useState<string>('');
   const [success, setSuccess] = useState(false);
@@ -120,21 +141,86 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
 
   const hasNoVehicles = !isVehiclesLoading && vehicles.length === 0;
 
-  // The route distance is only "known" once both endpoints are filled in —
-  // before that, the AI box simulates not having resolved a route yet and
-  // falls back to a flat base price.
-  const distanceKm = useMemo(
-    () => (from.trim() && to.trim() ? estimateDistance(from, to) : null),
-    [from, to],
-  );
-  const peak = isPeakTime(time);
+  const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
+  const [routeDistance, setRouteDistance] = useState<number | null>(null);
+  const [routeDuration, setRouteDuration] = useState<number | null>(null);
+  const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
+  const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
+  const [recommendedPrice, setRecommendedPrice] = useState<number>(150);
+  const [isPeakDemand, setIsPeakDemand] = useState<boolean>(false);
+  const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
 
-  // Recalculates automatically whenever the route or the departure time
-  // changes — this is what makes the recommendation feel "live".
-  const recommendedPrice = useMemo(
-    () => getAiRecommendedPrice(distanceKm, time),
-    [distanceKm, time],
-  );
+  // Запрос реального дорожного маршрута, полилинии и расчетной цены от бэкенда
+  useEffect(() => {
+    const trimmedFrom = from.trim();
+    const trimmedTo = to.trim();
+
+    if (trimmedFrom.length < 2 || trimmedTo.length < 2) {
+      setRoutePolyline(null);
+      setRouteDistance(null);
+      setRouteDuration(null);
+      setStartCoords(null);
+      setEndCoords(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsRouteLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const query = `/api/rides/route-preview?from=${encodeURIComponent(trimmedFrom)}&to=${encodeURIComponent(trimmedTo)}&time=${encodeURIComponent(time)}`;
+        const res = await api.get<RoutePreviewResponse>(query, {
+          signal: controller.signal,
+        });
+
+        if (res) {
+          const rawPoly = res.polyline ?? res.route_polyline;
+          let coords: [number, number][] | null = null;
+          if (Array.isArray(rawPoly)) {
+            coords = rawPoly as [number, number][];
+          } else if (rawPoly && typeof rawPoly === 'object' && Array.isArray(rawPoly.coordinates)) {
+            coords = rawPoly.coordinates;
+          }
+
+          if (coords) {
+            setRoutePolyline(coords);
+          }
+
+          const dist = res.distance_km ?? res.distanceKm ?? 5.0;
+          setRouteDistance(dist);
+
+          const dur = res.duration_min ?? res.durationMin ?? Math.round(dist * 2.2);
+          setRouteDuration(dur);
+
+          const sLon = res.start?.lon ?? res.from?.lon ?? res.start_coords?.lon;
+          const sLat = res.start?.lat ?? res.from?.lat ?? res.start_coords?.lat;
+          if (sLon !== undefined && sLat !== undefined) {
+            setStartCoords([sLon, sLat]);
+          }
+
+          const eLon = res.end?.lon ?? res.to?.lon ?? res.end_coords?.lon;
+          const eLat = res.end?.lat ?? res.to?.lat ?? res.end_coords?.lat;
+          if (eLon !== undefined && eLat !== undefined) {
+            setEndCoords([eLon, eLat]);
+          }
+
+          const priceVal = res.price ?? res.base_price ?? 150;
+          setRecommendedPrice(Math.round(priceVal / 5) * 5);
+          setIsPeakDemand(Boolean(res.is_peak ?? res.isPeak));
+        }
+      } catch {
+        // Игнорируем отмененные запросы
+      } finally {
+        setIsRouteLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [from, to, time]);
 
   const parsedPrice = price.trim() === '' ? null : Number(price);
   const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
@@ -149,11 +235,11 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
     time
   );
 
-  const handleApplyRecommendation = () => {
+  const handleApplyRecommendation = (): void => {
     setPrice(String(recommendedPrice));
   };
 
-  const handleDayToggle = (day: string) => {
+  const handleDayToggle = (day: string): void => {
     setRegularDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
@@ -184,8 +270,8 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
         time,
         telegram: telegram.replace('@', ''),
         price: parsedPrice,
-        distanceKm: distanceKm ?? estimateDistance(from, to),
-        isPeak: peak,
+        distanceKm: routeDistance ?? 5.0,
+        isPeak: isPeakDemand,
         vehicleId: selectedVehicleId || undefined,
         totalSeats,
         rideType,
@@ -197,9 +283,14 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
       setSuccess(true);
       setFrom('');
       setTo('');
-      setDate(getTodayDateString());
-      setTime('08:00');
+      setDate(getDefaultDateString());
+      setTime(getDefaultTimeString());
       setPrice('');
+      setRoutePolyline(null);
+      setRouteDistance(null);
+      setRouteDuration(null);
+      setStartCoords(null);
+      setEndCoords(null);
       successTimerRef.current = setTimeout(() => {
         setSuccess(false);
         successTimerRef.current = null;
@@ -293,7 +384,15 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          <RouteMap from={from || 'Точка А'} to={to || 'Точка Б'} />
+          <RouteMap
+            from={from || 'Точка А'}
+            to={to || 'Точка Б'}
+            polyline={routePolyline}
+            startCoords={startCoords}
+            endCoords={endCoords}
+            distanceKm={routeDistance}
+            durationMin={routeDuration}
+          />
 
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -436,9 +535,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                 <AutoAwesomeIcon sx={{ fontSize: 18 }} />
               </Box>
               <Typography variant="subtitle2" sx={{ fontWeight: 700, color: AI_ACCENT.text }}>
-                Умная цена от ИИ
+                Расчет стоимости маршрута
               </Typography>
-              {peak && (
+              {isRouteLoading && <CircularProgress size={16} sx={{ color: AI_ACCENT.iconColor, ml: 1 }} />}
+              {isPeakDemand && (
                 <Chip
                   icon={<BoltIcon sx={{ fontSize: 14 }} />}
                   label="Пиковый спрос +30%"
@@ -450,20 +550,24 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             </Stack>
 
             <Typography variant="body2" sx={{ color: AI_ACCENT.subtleText, fontWeight: 500, mb: 1.5 }}>
-              ✨ ИИ рекомендует поставить {formatPrice(recommendedPrice)} (Учтены расстояние и пробки)
+              {isRouteLoading
+                ? 'Связываемся с сервисом маршрутов для точного расчета...'
+                : routeDistance
+                ? `✨ Рекомендация: ${formatPrice(recommendedPrice)} (дистанция ${routeDistance} км, в пути ~${routeDuration || Math.round(routeDistance * 2.2)} мин)`
+                : '✨ Укажите точки отправления и назначения для расчета цены и построения маршрута'}
             </Typography>
 
             <Button
               fullWidth
               variant="contained"
-              disabled={hasNoVehicles}
+              disabled={hasNoVehicles || isRouteLoading}
               onClick={handleApplyRecommendation}
               sx={{
                 bgcolor: AI_ACCENT.button,
                 '&:hover': { bgcolor: AI_ACCENT.buttonHover },
               }}
             >
-              Применить
+              Применить ({formatPrice(recommendedPrice)})
             </Button>
           </Paper>
 

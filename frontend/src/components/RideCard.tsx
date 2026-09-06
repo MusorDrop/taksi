@@ -39,6 +39,7 @@ import { DAY_FULL, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
 import { api } from '../api';
 import { useApp } from '../AppContext';
+import RouteMap from './RouteMap';
 
 /**
  * Преобразование дня недели (Mon, Tue...) в краткий русский формат (Пн, Вт...)
@@ -359,6 +360,33 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       <Collapse in={expanded}>
         <Box sx={{ p: 2, pt: 0 }}>
           <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography
+                variant="subtitle2"
+                sx={{ fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}
+              >
+                <LocationOnIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                Маршрут на карте
+              </Typography>
+              <RouteMap
+                from={ride.from}
+                to={ride.to}
+                polyline={ride.polyline}
+                startCoords={
+                  ride.startLon !== undefined && ride.startLat !== undefined
+                    ? [ride.startLon, ride.startLat]
+                    : (ride.startCoords ? [ride.startCoords.lon, ride.startCoords.lat] : null)
+                }
+                endCoords={
+                  ride.endLon !== undefined && ride.endLat !== undefined
+                    ? [ride.endLon, ride.endLat]
+                    : (ride.endCoords ? [ride.endCoords.lon, ride.endCoords.lat] : null)
+                }
+                distanceKm={ride.distanceKm}
+                durationMin={ride.durationMin}
+                height={170}
+              />
+            </Box>
             {isDriver ? (
               <Box sx={{ mb: 2 }}>
                 <Typography
