@@ -18,6 +18,7 @@ uploads/
 scratch/
 .repomix-output.*
 .artifacts/
+tests/
 
 # Antigravity Project Scaffolding
 .agents/
