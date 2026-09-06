@@ -65,11 +65,15 @@ function calculateMapBounds(coordinates: [number, number][]): {
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
 
+  // Отступы по краям, чтобы маркеры А и Б не обрезались краями карты и нижним оверлеем
+  const lonPadding = Math.max((maxLon - minLon) * 0.15, 0.008);
+  const latPadding = Math.max((maxLat - minLat) * 0.15, 0.008);
+
   return {
     center: [(minLon + maxLon) / 2, (minLat + maxLat) / 2],
     bounds: [
-      [minLon, minLat],
-      [maxLon, maxLat],
+      [minLon - lonPadding, minLat - latPadding * 1.3],
+      [maxLon + lonPadding, maxLat + latPadding],
     ],
   };
 }
@@ -82,7 +86,7 @@ export default function RouteMap({
   endCoords,
   distanceKm,
   durationMin,
-  height = 220,
+  height = 280,
 }: RouteMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -265,7 +269,7 @@ export default function RouteMap({
               try {
                 const bounds = polylineGeo.geometry.getBounds();
                 if (bounds) {
-                  map.setBounds(bounds, { checkZoomRange: true, zoomMargin: 30 });
+                  map.setBounds(bounds, { checkZoomRange: true, zoomMargin: [35, 20, 50, 20] });
                 }
               } catch {
                 // ignore bounds error
@@ -306,6 +310,19 @@ export default function RouteMap({
 
             mapInstanceRef.current = map;
             setIsMapReady(true);
+
+            // Адаптация карты под реальные размеры контейнера после рендера и после завершения CSS-анимаций
+            const adjustViewport = (): void => {
+              if (map?.container?.fitToViewport) {
+                try {
+                  map.container.fitToViewport();
+                } catch {
+                  // Игнорируем возможные ошибки при быстром размонтировании
+                }
+              }
+            };
+            setTimeout(adjustViewport, 150);
+            setTimeout(adjustViewport, 350);
           } catch (err) {
             console.warn('Ошибка инициализации ymaps 2.1:', err);
             setIsMapReady(true);
@@ -395,9 +412,27 @@ export default function RouteMap({
 
     setupMap();
 
+    // Автоматический пересчет размеров карты при изменении размера контейнера
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current?.container?.fitToViewport) {
+          try {
+            mapInstanceRef.current.container.fitToViewport();
+          } catch {
+            // Игнорируем возможные ошибки
+          }
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
       isCancelled = true;
       clearTimeout(fallbackTimer);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (mapInstanceRef.current && typeof mapInstanceRef.current.destroy === 'function') {
         try {
           mapInstanceRef.current.destroy();
@@ -413,15 +448,24 @@ export default function RouteMap({
 
   return (
     <Box
+      onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
       sx={{
         position: 'relative',
         height,
         width: '100%',
+        minHeight: 250,
         borderRadius: 3,
         overflow: 'hidden',
         background: 'linear-gradient(135deg, #e8eef5 0%, #d5dfe9 50%, #c3d2e3 100%)',
         border: '1px solid',
         borderColor: 'divider',
+        m: 0,
+        p: 0,
+        boxSizing: 'border-box',
       }}
     >
       <Box
@@ -431,6 +475,8 @@ export default function RouteMap({
           height: '100%',
           position: 'absolute',
           inset: 0,
+          m: 0,
+          p: 0,
         }}
       />
 
@@ -507,6 +553,7 @@ export default function RouteMap({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          pointerEvents: 'none',
         }}
       >
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>

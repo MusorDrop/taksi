@@ -393,6 +393,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             endCoords={endCoords}
             distanceKm={routeDistance}
             durationMin={routeDuration}
+            height={280}
           />
 
           <Box>
