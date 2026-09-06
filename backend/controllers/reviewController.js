@@ -187,7 +187,10 @@ async function createReview(req, res) {
 }
 
 /**
- * Контроллер получения списка отзывов с опциональной фильтрацией и пагинацией (🟡-3)
+ * Контроллер получения списка отзывов с опциональной фильтрацией и пагинацией (🟡-3).
+ * Открытый доступ к GET /api/reviews (без обязательной авторизации) является осознанным
+ * решением архитектуры: потенциальные пассажиры должны иметь возможность ознакомиться с
+ * отзывами и рейтингом водителя перед выбором поездки и регистрацией (🟠-5).
  * GET /api/reviews
  * @param {import('express').Request} req - Запрос Express
  * @param {import('express').Response} res - Ответ Express
@@ -262,6 +265,5 @@ module.exports = {
     createReview,
     getReviews,
     updateUserAverageRating,
-    validateReviewInput,
-    isValidUuid
+    validateReviewInput
 };

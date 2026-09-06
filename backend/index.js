@@ -15,10 +15,14 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localh
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
 
-// Раздача статических файлов (аватарки пользователей) с безопасными параметрами
+// Раздача статических файлов (аватарки пользователей) с безопасными параметрами и CSP-заголовками (🔵-10)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     dotfiles: 'ignore',
-    index: false
+    index: false,
+    setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Disposition', 'inline');
+    }
 }));
 
 // Роуты API
@@ -85,6 +89,9 @@ app.use((err, req, res, next) => {
 
 // Запуск сервера
 if (require.main === module) {
+    if (!process.env.YANDEX_MAPS_API_KEY) {
+        console.warn('⚠ YANDEX_MAPS_API_KEY не задан — геокодирование работает в ограниченном fallback-режиме (🔵-9)');
+    }
     app.listen(PORT, () => {
         console.log(`Сервер запущен на порту ${PORT}`);
     });

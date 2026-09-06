@@ -375,16 +375,6 @@ async function updateProfile(req, res) {
     }
 
     try {
-        if (newTg) {
-            const checkConflict = await pool.query(
-                'SELECT id FROM users WHERE username = $1 AND id != $2',
-                [newTg, req.user.id]
-            );
-            if (checkConflict.rows.length > 0) {
-                return res.status(409).json({ error: 'Пользователь с таким Telegram / именем уже существует' });
-            }
-        }
-
         const query = `
             UPDATE users
             SET
