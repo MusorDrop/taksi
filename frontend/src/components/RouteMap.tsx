@@ -413,6 +413,11 @@ export default function RouteMap({
 
   return (
     <Box
+      onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+      onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
       sx={{
         position: 'relative',
         height,

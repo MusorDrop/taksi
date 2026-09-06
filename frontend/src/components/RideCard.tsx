@@ -360,7 +360,15 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       <Collapse in={expanded}>
         <Box sx={{ p: 2, pt: 0 }}>
           <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-            <Box sx={{ mb: 2 }}>
+            {/* Контейнер интерактивной карты с предотвращением всплытия событий к родительской карточке */}
+            <Box
+              sx={{ mb: 2 }}
+              onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+              onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+              onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+              onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+              onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+            >
               <Typography
                 variant="subtitle2"
                 sx={{ fontWeight: 600, mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -368,24 +376,32 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                 <LocationOnIcon sx={{ fontSize: 18, color: 'primary.main' }} />
                 Маршрут на карте
               </Typography>
-              <RouteMap
-                from={ride.from}
-                to={ride.to}
-                polyline={ride.polyline}
-                startCoords={
-                  ride.startLon !== undefined && ride.startLat !== undefined
-                    ? [ride.startLon, ride.startLat]
-                    : (ride.startCoords ? [ride.startCoords.lon, ride.startCoords.lat] : null)
-                }
-                endCoords={
-                  ride.endLon !== undefined && ride.endLat !== undefined
-                    ? [ride.endLon, ride.endLat]
-                    : (ride.endCoords ? [ride.endCoords.lon, ride.endCoords.lat] : null)
-                }
-                distanceKm={ride.distanceKm}
-                durationMin={ride.durationMin}
-                height={170}
-              />
+              <Box
+                onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+                onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+                onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
+                onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+                onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+              >
+                <RouteMap
+                  from={ride.from}
+                  to={ride.to}
+                  polyline={ride.polyline}
+                  startCoords={
+                    ride.startLon !== undefined && ride.startLat !== undefined
+                      ? [ride.startLon, ride.startLat]
+                      : (ride.startCoords ? [ride.startCoords.lon, ride.startCoords.lat] : null)
+                  }
+                  endCoords={
+                    ride.endLon !== undefined && ride.endLat !== undefined
+                      ? [ride.endLon, ride.endLat]
+                      : (ride.endCoords ? [ride.endCoords.lon, ride.endCoords.lat] : null)
+                  }
+                  distanceKm={ride.distanceKm}
+                  durationMin={ride.durationMin}
+                  height={170}
+                />
+              </Box>
             </Box>
             {isDriver ? (
               <Box sx={{ mb: 2 }}>
