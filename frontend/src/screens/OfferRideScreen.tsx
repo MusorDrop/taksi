@@ -173,7 +173,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
               },
               paper: {
                 elevation: 6,
-                sx: { borderRadius: 2, mt: 0.5, maxHeight: 280 },
+                sx: { borderRadius: 2, mt: 0.5 },
+              },
+              listbox: {
+                sx: { maxHeight: 280 },
               },
             }}
             renderInput={(params) => (
@@ -271,7 +274,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
               },
               paper: {
                 elevation: 6,
-                sx: { borderRadius: 2, mt: 0.5, maxHeight: 280 },
+                sx: { borderRadius: 2, mt: 0.5 },
+              },
+              listbox: {
+                sx: { maxHeight: 280 },
               },
             }}
             renderInput={(params) => (
