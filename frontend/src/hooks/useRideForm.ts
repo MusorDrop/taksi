@@ -8,12 +8,18 @@ import { useAddressSuggest, type UseAddressSuggestReturn } from './useAddressSug
 export const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 export const AVAILABLE_TAGS = [
-  'Музыка',
-  'Болтливый',
+  'Можно с багажом',
+  'Пустой багажник',
+  'Люблю поболтать',
+  'Еду молча',
+  'С музыкой',
+  'Тишина',
   'Аккуратно вожу',
-  'Чисто',
+  'Чистый салон',
   'Не курить',
-  'С животными',
+  'Можно с животными',
+  'Можно с кофе/едой',
+  'Без остановок',
 ] as const;
 
 export type RideTag = (typeof AVAILABLE_TAGS)[number];

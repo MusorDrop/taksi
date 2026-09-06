@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
@@ -86,7 +86,10 @@ export default function RouteMap({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: isMapReady ? 'rgba(255, 255, 255, 0.4)' : 'background.paper',
+            bgcolor: (theme) =>
+              isMapReady
+                ? (theme.palette.mode === 'dark' ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.4)')
+                : 'background.paper',
             zIndex: 1,
           }}
         >
@@ -116,7 +119,10 @@ export default function RouteMap({
               icon={<TimelineIcon sx={{ fontSize: 14 }} />}
               label={`${currentDistance} км`}
               sx={{
-                bgcolor: 'rgba(255, 255, 255, 0.92)',
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+                color: (theme) =>
+                  theme.palette.mode === 'dark' ? '#f8fafc' : '#0f172a',
                 backdropFilter: 'blur(4px)',
                 fontWeight: 600,
                 boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
@@ -129,7 +135,10 @@ export default function RouteMap({
               icon={<AccessTimeIcon sx={{ fontSize: 14 }} />}
               label={`~${currentDuration} мин`}
               sx={{
-                bgcolor: 'rgba(255, 255, 255, 0.92)',
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+                color: (theme) =>
+                  theme.palette.mode === 'dark' ? '#f8fafc' : '#0f172a',
                 backdropFilter: 'blur(4px)',
                 fontWeight: 600,
                 boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
@@ -146,7 +155,10 @@ export default function RouteMap({
           left: 0,
           right: 0,
           p: 1.2,
-          background: 'linear-gradient(to top, rgba(255,255,255,0.95) 70%, transparent)',
+          background: (theme) =>
+            theme.palette.mode === 'dark'
+              ? 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 70%, transparent)'
+              : 'linear-gradient(to top, rgba(255, 255, 255, 0.95) 70%, transparent)',
           zIndex: 2,
           display: 'flex',
           alignItems: 'center',
