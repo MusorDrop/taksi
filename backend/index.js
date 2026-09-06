@@ -38,13 +38,26 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
+const rateLimit = require('express-rate-limit');
 const yandexMaps = require('./services/yandexMaps');
 
-// Получение подсказок адресов через Yandex Suggest API
-app.get('/api/suggest', async (req, res) => {
+// Ограничение частоты запросов для подсказок адресов (Suggest API)
+const suggestLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 60,
+    message: {
+        error: 'Слишком много запросов к сервису подсказок адресов. Пожалуйста, подождите минуту.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Получение подсказок адресов через Yandex Suggest API с жесткими параметрами для Екатеринбурга
+app.get('/api/suggest', suggestLimiter, async (req, res) => {
     try {
         const text = req.query.text || req.query.query || '';
-        const suggestions = await yandexMaps.suggestAddress(String(text));
+        const boundedBy = req.query.boundedBy || req.query.bbox || req.query.bounds;
+        const suggestions = await yandexMaps.suggestAddress(String(text), boundedBy);
         res.json({ suggestions });
     } catch (err) {
         console.warn('Ошибка получения подсказок адресов:', err);
