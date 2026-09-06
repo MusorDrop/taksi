@@ -21,7 +21,7 @@ END $$;
 -- Таблица пользователей
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    username VARCHAR(100) NOT NULL UNIQUE,
+    username VARCHAR(100) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100),
     last_name VARCHAR(100),
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
     emergency_contact VARCHAR(255),
     preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_users_username UNIQUE (username)
 );
 
 -- Таблица транспортных средств
@@ -58,6 +59,8 @@ CREATE TABLE IF NOT EXISTS rides (
     departure_time TIMESTAMP WITH TIME ZONE NOT NULL,
     start_point GEOMETRY(Point, 4326) NOT NULL,
     end_point GEOMETRY(Point, 4326) NOT NULL,
+    start_address TEXT,
+    end_address TEXT,
     route_line GEOMETRY(LineString, 4326),
     total_seats INTEGER NOT NULL DEFAULT 4,
     available_seats INTEGER NOT NULL DEFAULT 4,
