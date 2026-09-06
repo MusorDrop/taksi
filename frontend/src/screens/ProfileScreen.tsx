@@ -28,6 +28,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import EditIcon from '@mui/icons-material/Edit';
 import PhoneIcon from '@mui/icons-material/Phone';
+import SecurityIcon from '@mui/icons-material/Security';
 import { useApp } from '../AppContext';
 import { useThemeMode } from '../ThemeModeContext';
 import { api } from '../api';
@@ -693,6 +694,86 @@ export default function ProfileScreen() {
           Выйти
         </Button>
       </Stack>
+
+      {/* Секция: Экстренная связь (Служба безопасности) */}
+      <Paper
+        variant="outlined"
+        sx={{
+          mt: 3,
+          p: 2,
+          borderRadius: 3.5,
+          borderColor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.35)' : 'rgba(239, 68, 68, 0.25)',
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(254, 242, 242, 0.65)',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent="space-between"
+        >
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 42,
+                height: 42,
+                borderRadius: 2.5,
+                bgcolor: 'error.main',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <SecurityIcon sx={{ fontSize: 24 }} />
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'error.main' }}>
+                Экстренная связь (Служба безопасности)
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                Круглосуточный телефон дежурного: +79925032507
+              </Typography>
+            </Box>
+          </Stack>
+          <Button
+            component="a"
+            href="tel:+79925032507"
+            variant="contained"
+            color="error"
+            size="medium"
+            startIcon={<PhoneIcon />}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 2.5,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(211, 47, 47, 0.3)',
+            }}
+          >
+            +7 (992) 503-25-07
+          </Button>
+        </Stack>
+      </Paper>
+
+      {/* Юридическая информация и плашка тестовой версии */}
+      <Box sx={{ mt: 3, mb: 1, textAlign: 'center', px: 2 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{
+            display: 'block',
+            lineHeight: 1.5,
+            opacity: 0.8,
+            fontSize: '0.75rem',
+          }}
+        >
+          Попутка ИИ — Тестовая версия (Beta). Использование сервиса означает согласие с Базовым пользовательским соглашением. УрФУ, 2026.
+        </Typography>
+      </Box>
 
       {/* Модальное окно редактирования контактов (телефон и TG) */}
       <Dialog

@@ -1,4 +1,4 @@
-﻿const gigachatService = require('../services/gigachatService');
+const gigachatService = require('../services/gigachatService');
 const yandexMaps = require('../services/yandexMaps');
 
 /**
@@ -73,7 +73,7 @@ async function geocodeRidePoint(address) {
  * @param {import('express').Response} res - Express Response
  */
 async function parseRide(req, res) {
-    const rawText = req.body?.text;
+    const rawText = req.body?.text || req.body?.message;
 
     if (!rawText || typeof rawText !== 'string' || rawText.trim().length === 0) {
         return res.status(400).json({
