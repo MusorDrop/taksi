@@ -59,6 +59,7 @@ const globalStyles = (
 function AppContent() {
   const { user, isAuthLoading } = useApp();
   const [tab, setTab] = useState<TabKey>('find');
+  const [tripsRole, setTripsRole] = useState<'passenger' | 'driver'>('passenger');
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => checkIsAdminRoute());
 
   // Прокрутка страницы наверх при смене вкладки
@@ -143,8 +144,16 @@ function AppContent() {
         }}
       >
         {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}
-        {tab === 'offer' && <OfferRideScreen onNavigateToProfile={() => setTab('profile')} />}
-        {tab === 'trips' && <MyTripsScreen />}
+        {tab === 'offer' && (
+          <OfferRideScreen
+            onNavigateToProfile={() => setTab('profile')}
+            onSuccess={() => {
+              setTripsRole('driver');
+              setTab('trips');
+            }}
+          />
+        )}
+        {tab === 'trips' && <MyTripsScreen initialTab={tripsRole} />}
         {tab === 'profile' && <ProfileScreen />}
       </Container>
       <BottomNav value={tab} onChange={setTab} />

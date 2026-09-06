@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -37,12 +38,13 @@ import {
 
 export interface OfferRideScreenProps {
   onNavigateToProfile?: () => void;
+  onSuccess?: () => void;
 }
 
 /**
  * Экран предложения новой поездки водителем с интерактивной картой и автодополнением адресов
  */
-export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreenProps) {
+export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: OfferRideScreenProps) {
   const {
     fromSuggest,
     toSuggest,
@@ -82,6 +84,13 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
     handleApplyRecommendation,
     handleSubmit,
   } = useRideForm();
+
+  // Автоматическое переключение на вкладку «Мои поездки» при успешном создании маршрута
+  useEffect(() => {
+    if (success && onSuccess) {
+      onSuccess();
+    }
+  }, [success, onSuccess]);
 
   return (
     <Box sx={{ pb: { xs: 12, sm: 8 } }}>
