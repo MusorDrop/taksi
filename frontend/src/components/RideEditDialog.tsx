@@ -20,6 +20,8 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import GroupIcon from '@mui/icons-material/Group';
 import { useApp } from '../AppContext';
 import { useAddressSuggest, type AddressOption, type UseAddressSuggestReturn } from '../hooks/useAddressSuggest';
+import { useRoutePreview } from '../hooks/useRoutePreview';
+import RouteMap from './RouteMap';
 import type { Ride } from '../types';
 
 interface AddressAutocompleteFieldProps {
@@ -55,7 +57,12 @@ function AddressAutocompleteField({
       }
       onOpen={() => suggest.setIsOpen(true)}
       onClose={() => suggest.setIsOpen(false)}
-      onInputChange={suggest.handleInputChange}
+      onInputChange={(e, val, reason) => {
+        suggest.handleInputChange(e, val, reason);
+        if (reason === 'input') {
+          suggest.setValue(val);
+        }
+      }}
       onChange={suggest.handleChange}
       onBlur={suggest.handleBlur}
       getOptionLabel={(option) =>
@@ -177,6 +184,40 @@ function validateEditForm(params: ValidationParams): string | null {
   return null;
 }
 
+/**
+ * Извлечение начальных координат [lon, lat] из объекта поездки
+ */
+function getRideStartCoords(ride: Ride): [number, number] | null {
+  if (ride.startLon !== undefined && ride.startLat !== undefined) {
+    return [ride.startLon, ride.startLat];
+  }
+  if (
+    ride.startCoords &&
+    typeof ride.startCoords.lon === 'number' &&
+    typeof ride.startCoords.lat === 'number'
+  ) {
+    return [ride.startCoords.lon, ride.startCoords.lat];
+  }
+  return null;
+}
+
+/**
+ * Извлечение конечных координат [lon, lat] из объекта поездки
+ */
+function getRideEndCoords(ride: Ride): [number, number] | null {
+  if (ride.endLon !== undefined && ride.endLat !== undefined) {
+    return [ride.endLon, ride.endLat];
+  }
+  if (
+    ride.endCoords &&
+    typeof ride.endCoords.lon === 'number' &&
+    typeof ride.endCoords.lat === 'number'
+  ) {
+    return [ride.endCoords.lon, ride.endCoords.lat];
+  }
+  return null;
+}
+
 export interface RideEditDialogProps {
   open: boolean;
   onClose: () => void;
@@ -208,6 +249,22 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
     setOptions: setToOptions,
   } = toSuggest;
 
+  const {
+    polyline,
+    distanceKm,
+    durationMin,
+    startCoords,
+    endCoords,
+    setInitialRoute,
+  } = useRoutePreview(fromSuggest.value, toSuggest.value, time, {
+    enabled: open,
+    initialPolyline: ride.polyline ?? null,
+    initialStartCoords: getRideStartCoords(ride),
+    initialEndCoords: getRideEndCoords(ride),
+    initialDistanceKm: ride.distanceKm ?? null,
+    initialDurationMin: ride.durationMin ?? null,
+  });
+
   // Синхронизация состояния полей при открытии диалога с актуальными данными поездки
   useEffect(() => {
     if (open) {
@@ -221,21 +278,24 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
       setPrice(String(ride.price ?? ''));
       setSeats(String(ride.totalSeats || 4));
       setError(null);
+      setInitialRoute({
+        polyline: ride.polyline ?? null,
+        startCoords: getRideStartCoords(ride),
+        endCoords: getRideEndCoords(ride),
+        distanceKm: ride.distanceKm ?? null,
+        durationMin: ride.durationMin ?? null,
+      });
     }
   }, [
     open,
-    ride.id,
-    ride.from,
-    ride.to,
-    ride.time,
-    ride.price,
-    ride.totalSeats,
+    ride,
     setFromValue,
     setFromInputValue,
     setFromOptions,
     setToValue,
     setToInputValue,
     setToOptions,
+    setInitialRoute,
   ]);
 
   const handleClose = (): void => {
@@ -279,6 +339,8 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
         base_price: numPrice,
         seats: numSeats,
         total_seats: numSeats,
+        distance_km: distanceKm ?? ride.distanceKm,
+        distanceKm: distanceKm ?? ride.distanceKm,
       });
       onClose();
     } catch (err: unknown) {
@@ -350,6 +412,32 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
               suggest={toSuggest}
               disabled={isSubmitting}
             />
+
+            {/* Интерактивная карта маршрута */}
+            <Box
+              sx={{
+                borderRadius: 3,
+                overflow: 'hidden',
+                border: '1px solid',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+                boxShadow: (theme) =>
+                  theme.palette.mode === 'dark'
+                    ? '0 4px 16px rgba(0, 0, 0, 0.25)'
+                    : '0 2px 8px -2px rgba(15, 23, 42, 0.06)',
+              }}
+            >
+              <RouteMap
+                from={fromSuggest.value || 'Точка А'}
+                to={toSuggest.value || 'Точка Б'}
+                polyline={polyline}
+                startCoords={startCoords}
+                endCoords={endCoords}
+                distanceKm={distanceKm}
+                durationMin={durationMin}
+                height={240}
+              />
+            </Box>
 
             {/* Время выезда */}
             <TextField

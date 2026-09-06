@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { useApp } from '../AppContext';
 import { api } from '../api';
-import type { Vehicle, VehiclesResponse, RoutePreviewResponse } from '../types';
+import type { Vehicle, VehiclesResponse } from '../types';
 import { formatDateString } from '../utils';
 import { useAddressSuggest, type UseAddressSuggestReturn } from './useAddressSuggest';
+import { useRoutePreview } from './useRoutePreview';
 
 export const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -134,14 +135,17 @@ export function useRideForm(): UseRideFormReturn {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [routePolyline, setRoutePolyline] = useState<[number, number][] | null>(null);
-  const [routeDistance, setRouteDistance] = useState<number | null>(null);
-  const [routeDuration, setRouteDuration] = useState<number | null>(null);
-  const [startCoords, setStartCoords] = useState<[number, number] | null>(null);
-  const [endCoords, setEndCoords] = useState<[number, number] | null>(null);
-  const [recommendedPrice, setRecommendedPrice] = useState<number>(150);
-  const [isPeakDemand, setIsPeakDemand] = useState<boolean>(false);
-  const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
+  const {
+    routePolyline,
+    routeDistance,
+    routeDuration,
+    startCoords,
+    endCoords,
+    recommendedPrice,
+    isPeakDemand,
+    isRouteLoading,
+    clear: clearRoute,
+  } = useRoutePreview(fromSuggest.value, toSuggest.value, time);
 
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -188,77 +192,6 @@ export function useRideForm(): UseRideFormReturn {
 
   const hasNoVehicles = !isVehiclesLoading && vehicles.length === 0;
 
-  // Запрос реального дорожного маршрута при изменении точек А и Б
-  useEffect(() => {
-    const trimmedFrom = fromSuggest.value.trim();
-    const trimmedTo = toSuggest.value.trim();
-
-    if (trimmedFrom.length < 2 || trimmedTo.length < 2) {
-      setRoutePolyline(null);
-      setRouteDistance(null);
-      setRouteDuration(null);
-      setStartCoords(null);
-      setEndCoords(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsRouteLoading(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        const query = `/api/rides/route-preview?from=${encodeURIComponent(trimmedFrom)}&to=${encodeURIComponent(trimmedTo)}&time=${encodeURIComponent(time)}`;
-        const res = await api.get<RoutePreviewResponse>(query, {
-          signal: controller.signal,
-        });
-
-        if (res) {
-          const rawPoly = res.polyline ?? res.route_polyline;
-          let coords: [number, number][] | null = null;
-          if (Array.isArray(rawPoly)) {
-            coords = rawPoly as [number, number][];
-          } else if (rawPoly && typeof rawPoly === 'object' && Array.isArray(rawPoly.coordinates)) {
-            coords = rawPoly.coordinates;
-          }
-
-          if (coords) {
-            setRoutePolyline(coords);
-          }
-
-          const dist = res.distance_km ?? res.distanceKm ?? 5.0;
-          setRouteDistance(dist);
-
-          const dur = res.duration_min ?? res.durationMin ?? Math.round(dist * 2.2);
-          setRouteDuration(dur);
-
-          const sLon = res.start?.lon ?? res.from?.lon ?? res.start_coords?.lon;
-          const sLat = res.start?.lat ?? res.from?.lat ?? res.start_coords?.lat;
-          if (sLon !== undefined && sLat !== undefined) {
-            setStartCoords([sLon, sLat]);
-          }
-
-          const eLon = res.end?.lon ?? res.to?.lon ?? res.end_coords?.lon;
-          const eLat = res.end?.lat ?? res.to?.lat ?? res.end_coords?.lat;
-          if (eLon !== undefined && eLat !== undefined) {
-            setEndCoords([eLon, eLat]);
-          }
-
-          const priceVal = res.price ?? res.base_price ?? 150;
-          setRecommendedPrice(Math.round(priceVal / 5) * 5);
-          setIsPeakDemand(Boolean(res.is_peak ?? res.isPeak));
-        }
-      } catch {
-        // Игнорируем отмененные запросы
-      } finally {
-        setIsRouteLoading(false);
-      }
-    }, 350);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [fromSuggest.value, toSuggest.value, time]);
 
   const parsedPrice = price.trim() === '' ? null : Number(price);
   const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
@@ -340,13 +273,7 @@ export function useRideForm(): UseRideFormReturn {
       setPrice('');
       setDescription('');
       setTags([]);
-      setRoutePolyline(null);
-      setRouteDistance(null);
-      setRouteDuration(null);
-      setStartCoords(null);
-      if (endCoords) {
-        setEndCoords(null);
-      }
+      clearRoute();
 
       successTimerRef.current = setTimeout(() => {
         setSuccess(false);
