@@ -1,15 +1,26 @@
 const pool = require('../db');
+const yandexMaps = require('../services/yandexMaps');
 
 // Известные координаты ключевых локаций Екатеринбурга (lon: долгота, lat: широта)
 const KNOWN_LOCATIONS = {
     'уралмаш': { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' },
     'новокольцовский': { lon: 60.7712, lat: 56.7686, name: 'Кампус Новокольцовский' },
+    'кампус': { lon: 60.7712, lat: 56.7686, name: 'Кампус Новокольцовский' },
     'центр': { lon: 60.6057, lat: 56.8389, name: 'Центр' },
     'урфу': { lon: 60.6534, lat: 56.8439, name: 'Главный корпус УрФУ' },
     'мира': { lon: 60.6534, lat: 56.8439, name: 'Мира 19' },
     'втузгородок': { lon: 60.6530, lat: 56.8430, name: 'Втузгородок' },
     'академический': { lon: 60.5186, lat: 56.7865, name: 'Академический' },
-    'жби': { lon: 60.6860, lat: 56.8285, name: 'ЖБИ' }
+    'жби': { lon: 60.6860, lat: 56.8285, name: 'ЖБИ' },
+    'вокзал': { lon: 60.6054, lat: 56.8584, name: 'Ж/Д Вокзал' },
+    'ботаника': { lon: 60.6310, lat: 56.7970, name: 'Ботаника' },
+    'юго-западный': { lon: 60.5530, lat: 56.8040, name: 'Юго-Западный' },
+    'пионерский': { lon: 60.6380, lat: 56.8610, name: 'Пионерский' },
+    'эльмаш': { lon: 60.6320, lat: 56.8920, name: 'Эльмаш' },
+    'виз': { lon: 60.5400, lat: 56.8360, name: 'ВИЗ' },
+    'сортировка': { lon: 60.5280, lat: 56.8720, name: 'Сортировка' },
+    'химмаш': { lon: 60.6720, lat: 56.7450, name: 'Химмаш' },
+    'библиотека': { lon: 60.6130, lat: 56.8340, name: 'Центральная библиотека' }
 };
 
 const DEFAULT_START = { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' };
@@ -50,9 +61,10 @@ function resolvePointCoordinates(input, fallback) {
         const lower = input.toLowerCase().trim();
         for (const [key, value] of Object.entries(KNOWN_LOCATIONS)) {
             if (lower.includes(key)) {
-                return value;
+                return { ...value, name: input.trim() };
             }
         }
+        return { ...fallback, name: input.trim() };
     }
 
     return fallback;
@@ -259,6 +271,9 @@ function mapRideRow(row) {
         end_lat: Number(row.end_lat),
         distance_km: distanceKm,
         distanceKm: distanceKm,
+        distance_meters: row.distance_meters !== null && row.distance_meters !== undefined ? Number(row.distance_meters) : Math.round(distanceKm * 1000),
+        duration_seconds: row.duration_seconds !== null && row.duration_seconds !== undefined ? Number(row.duration_seconds) : null,
+        route_polyline: row.route_polyline || null,
         is_peak: isPeak,
         isPeak: isPeak,
         base_price: basePrice,
@@ -273,6 +288,9 @@ function mapRideRow(row) {
         status: row.status,
         ride_type: row.ride_type || 'one_off',
         regular_days: row.regular_days || null,
+        polyline: row.route_polyline?.coordinates || ((!isNaN(Number(row.start_lon)) && !isNaN(Number(row.end_lon)))
+            ? generateRoutePolyline(Number(row.start_lon), Number(row.start_lat), Number(row.end_lon), Number(row.end_lat))
+            : []),
         created_at: row.created_at
     };
 }
@@ -292,14 +310,26 @@ async function createRide(req, res) {
             ? { lat: req.body.start_lat, lon: req.body.start_lon }
             : null
     );
-    const startCoords = resolvePointCoordinates(rawStart, DEFAULT_START);
+    let startCoords;
+    if (typeof rawStart === 'string') {
+        const geocoded = await yandexMaps.geocodeAddress(rawStart);
+        startCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+    } else {
+        startCoords = resolvePointCoordinates(rawStart, DEFAULT_START);
+    }
 
     const rawEnd = req.body.end_point || req.body.to || (
         req.body.end_lat !== undefined && req.body.end_lon !== undefined
             ? { lat: req.body.end_lat, lon: req.body.end_lon }
             : null
     );
-    const endCoords = resolvePointCoordinates(rawEnd, DEFAULT_END);
+    let endCoords;
+    if (typeof rawEnd === 'string') {
+        const geocoded = await yandexMaps.geocodeAddress(rawEnd);
+        endCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+    } else {
+        endCoords = resolvePointCoordinates(rawEnd, DEFAULT_END);
+    }
 
     const vehicleId = req.body.vehicle_id || null;
     if (vehicleId && !isValidUuid(vehicleId)) {
@@ -338,8 +368,13 @@ async function createRide(req, res) {
             }
         }
 
-        const distanceKm = await calculateDistanceKm(client, startCoords.lon, startCoords.lat, endCoords.lon, endCoords.lat);
-        const isPeak = isPeakHour(departureTime);
+        // Построение реального маршрута и расчет цены через сервис yandexMaps
+        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+        const calculatedPricing = yandexMaps.calculateTripPrice(
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            departureTime
+        );
 
         let basePrice;
         const hasCustomPrice = (req.body.base_price !== undefined && req.body.base_price !== null && String(req.body.base_price).trim() !== '') ||
@@ -354,7 +389,7 @@ async function createRide(req, res) {
             }
             basePrice = Math.round(parsedVal * 100) / 100;
         } else {
-            basePrice = calculateBasePrice(distanceKm, isPeak);
+            basePrice = calculatedPricing.base_price;
         }
 
         const rideType = req.body.ride_type === 'regular' ? 'regular' : 'one_off';
@@ -374,7 +409,10 @@ async function createRide(req, res) {
                 available_seats,
                 status,
                 ride_type,
-                regular_days
+                regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline
             ) VALUES (
                 $1,
                 $2,
@@ -386,7 +424,10 @@ async function createRide(req, res) {
                 $10,
                 'scheduled',
                 $11,
-                $12
+                $12,
+                $13,
+                $14,
+                $15
             )
             RETURNING 
                 id,
@@ -404,6 +445,9 @@ async function createRide(req, res) {
                 status,
                 ride_type,
                 regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline,
                 created_at
         `;
 
@@ -419,7 +463,10 @@ async function createRide(req, res) {
             totalSeats,
             availableSeats,
             rideType,
-            regularDays
+            regularDays,
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            JSON.stringify(routeData.route_polyline)
         ]);
 
         await client.query('COMMIT');
@@ -1277,11 +1324,116 @@ async function deleteRide(req, res) {
     }
 }
 
+/**
+ * Генерация точек полилинии между точкой отправления и точкой назначения
+ * @param {number} startLon - Долгота начальной точки
+ * @param {number} startLat - Широта начальной точки
+ * @param {number} endLon - Долгота конечной точки
+ * @param {number} endLat - Широта конечной точки
+ * @param {number} [numPoints=18] - Количество точек интерполяции
+ * @returns {Array<[number, number]>} Массив координат [lon, lat]
+ */
+function generateRoutePolyline(startLon, startLat, endLon, endLat, numPoints = 18) {
+    const points = [];
+    const dx = endLon - startLon;
+    const dy = endLat - startLat;
+    const midX = (startLon + endLon) / 2;
+    const midY = (startLat + endLat) / 2;
+    const devX = -dy * 0.12;
+    const devY = dx * 0.12;
+
+    for (let i = 0; i <= numPoints; i++) {
+        const t = i / numPoints;
+        const oneMinusT = 1 - t;
+        const lon = oneMinusT * oneMinusT * startLon + 2 * oneMinusT * t * (midX + devX) + t * t * endLon;
+        const lat = oneMinusT * oneMinusT * startLat + 2 * oneMinusT * t * (midY + devY) + t * t * endLat;
+        points.push([
+            Math.round(lon * 100000) / 100000,
+            Math.round(lat * 100000) / 100000
+        ]);
+    }
+    return points;
+}
+
+/**
+ * Предварительный расчет маршрута (полилиния, цена, дистанция, время в пути через Yandex Maps API)
+ * @param {object} req - Express запрос
+ * @param {object} res - Express ответ
+ */
+async function getRoutePreview(req, res) {
+    try {
+        const fromInput = req.query.from || req.body?.from || req.query.start || req.body?.start_point;
+        const toInput = req.query.to || req.body?.to || req.query.end || req.body?.end_point;
+        const timeInput = req.query.time || req.body?.time || req.query.departure_time || req.body?.departure_time;
+
+        if (!fromInput || !toInput) {
+            return res.status(400).json({ error: 'Параметры "from" и "to" обязательны для построения маршрута' });
+        }
+
+        let startCoords;
+        if (typeof fromInput === 'string') {
+            const geocoded = await yandexMaps.geocodeAddress(fromInput);
+            startCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+        } else {
+            startCoords = resolvePointCoordinates(fromInput, DEFAULT_START);
+        }
+
+        let endCoords;
+        if (typeof toInput === 'string') {
+            const geocoded = await yandexMaps.geocodeAddress(toInput);
+            endCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+        } else {
+            endCoords = resolvePointCoordinates(toInput, DEFAULT_END);
+        }
+
+        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+        const departureDate = parseDepartureTime(timeInput);
+        const priceInfo = yandexMaps.calculateTripPrice(
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            departureDate
+        );
+
+        return res.json({
+            from: {
+                address: startCoords.name,
+                lat: startCoords.lat,
+                lon: startCoords.lon
+            },
+            to: {
+                address: endCoords.name,
+                lat: endCoords.lat,
+                lon: endCoords.lon
+            },
+            start: startCoords,
+            end: endCoords,
+            start_coords: { lon: startCoords.lon, lat: startCoords.lat },
+            end_coords: { lon: endCoords.lon, lat: endCoords.lat },
+            distance_meters: routeData.distance_meters,
+            duration_seconds: routeData.duration_seconds,
+            distance_km: routeData.distance_km,
+            distanceKm: routeData.distance_km,
+            duration_min: routeData.duration_minutes,
+            durationMin: routeData.duration_minutes,
+            price: priceInfo.base_price,
+            base_price: priceInfo.base_price,
+            is_peak: priceInfo.is_peak,
+            isPeak: priceInfo.is_peak,
+            route_polyline: routeData.route_polyline,
+            polyline: routeData.route_polyline?.coordinates || routeData.route_polyline
+        });
+    } catch (err) {
+        console.error('Ошибка в route-preview:', err);
+        return res.status(500).json({ error: 'Не удалось построить предпросмотр маршрута' });
+    }
+}
+
 module.exports = {
     createRide,
     getRides,
     getAllRides,
     getRideById,
+    getRoutePreview,
     deleteRide,
     joinRide,
     leaveRide,
@@ -1289,5 +1441,6 @@ module.exports = {
     kickPassenger,
     isPeakHour,
     calculateDistanceKm,
-    calculateBasePrice
+    calculateBasePrice,
+    generateRoutePolyline
 };
