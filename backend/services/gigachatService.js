@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const GIGACHAT_OAUTH_URL = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth';
 const GIGACHAT_COMPLETIONS_URL = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions';
 const DEFAULT_SCOPE = 'GIGACHAT_API_PERS';
-const DEFAULT_MODEL = 'GigaChat';
+const DEFAULT_MODEL = process.env.GIGACHAT_MODEL || 'GigaChat-Pro';
 const REQUEST_TIMEOUT_MS = 25000;
 
 // Допустимый список тегов поездки (строго синхронизирован с AVAILABLE_TAGS на фронтенде)
