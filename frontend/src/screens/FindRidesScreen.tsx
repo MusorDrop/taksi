@@ -9,15 +9,131 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import AddIcon from '@mui/icons-material/Add';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import PaymentsIcon from '@mui/icons-material/Payments';
+import NearMeIcon from '@mui/icons-material/NearMe';
+import AirlineSeatReclineNormalIcon from '@mui/icons-material/AirlineSeatReclineNormal';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
-import { DAY_KEYS, DAY_SHORT, type DayKey } from '../types';
+import { DAY_KEYS, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { getRideDayKey } from '../utils';
+
+export type SortOption = 'time' | 'price' | 'distance';
+
+interface Coordinates {
+  lat: number;
+  lon: number;
+}
+
+const DEFAULT_FILTER_TAGS: readonly string[] = [
+  'С музыкой',
+  'Можно с багажом',
+  'Тихая поездка',
+  'Не курить',
+  'Чистый салон',
+  'Можно с животными',
+];
+
+/**
+ * Извлекает начальные координаты поездки
+ */
+function getRideStartCoordinates(ride: Ride): Coordinates | null {
+  if (ride.startCoords && typeof ride.startCoords.lat === 'number' && typeof ride.startCoords.lon === 'number') {
+    return { lat: ride.startCoords.lat, lon: ride.startCoords.lon };
+  }
+  if (typeof ride.startLat === 'number' && typeof ride.startLon === 'number') {
+    return { lat: ride.startLat, lon: ride.startLon };
+  }
+  return null;
+}
+
+/**
+ * Вычисляет расстояние в километрах между двумя координатами по формуле гаверсинуса
+ */
+function calculateDistanceKm(point1: Coordinates, point2: Coordinates): number {
+  const earthRadiusKm = 6371;
+  const dLat = ((point2.lat - point1.lat) * Math.PI) / 180;
+  const dLon = ((point2.lon - point1.lon) * Math.PI) / 180;
+  const lat1Rad = (point1.lat * Math.PI) / 180;
+  const lat2Rad = (point2.lat * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return earthRadiusKm * c;
+}
+
+/**
+ * Извлекает временную метку или числовое значение для сортировки поездки по времени
+ */
+function getRideTimeSortValue(ride: Ride): number {
+  const timeString = ride.departureTime || ride.departure_time;
+  if (timeString) {
+    const parsedDate = new Date(timeString).getTime();
+    if (!Number.isNaN(parsedDate)) {
+      return parsedDate;
+    }
+  }
+
+  if (ride.time) {
+    const [hours, minutes] = ride.time.split(':').map((part) => parseInt(part, 10));
+    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+      return hours * 60 + minutes;
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Сортирует список поездок по выбранному критерию
+ */
+function sortRides(
+  ridesList: Ride[],
+  sortBy: SortOption | null,
+  userLocation: Coordinates | null
+): Ride[] {
+  if (!sortBy) {
+    return ridesList;
+  }
+
+  const sorted = [...ridesList];
+
+  if (sortBy === 'time') {
+    return sorted.sort((a, b) => getRideTimeSortValue(a) - getRideTimeSortValue(b));
+  }
+
+  if (sortBy === 'price') {
+    return sorted.sort((a, b) => {
+      const priceA = a.currentPrice ?? a.price ?? 0;
+      const priceB = b.currentPrice ?? b.price ?? 0;
+      return priceA - priceB;
+    });
+  }
+
+  if (sortBy === 'distance') {
+    if (!userLocation) {
+      return ridesList;
+    }
+    return sorted.sort((a, b) => {
+      const coordsA = getRideStartCoordinates(a);
+      const coordsB = getRideStartCoordinates(b);
+      const distA = coordsA ? calculateDistanceKm(userLocation, coordsA) : Number.POSITIVE_INFINITY;
+      const distB = coordsB ? calculateDistanceKm(userLocation, coordsB) : Number.POSITIVE_INFINITY;
+      return distA - distB;
+    });
+  }
+
+  return sorted;
+}
 
 interface FindRidesScreenProps {
   onNavigateToOffer?: () => void;
@@ -29,6 +145,10 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiQuery, setAiQuery] = useState<string>('');
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption | null>(null);
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+  const [filterTwoSeats, setFilterTwoSeats] = useState<boolean>(false);
+  const [filterTags, setFilterTags] = useState<string[]>([]);
 
   const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -49,6 +169,72 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
     }, 1500);
   };
 
+  const handleSortTime = (): void => {
+    setSortBy((prev) => (prev === 'time' ? null : 'time'));
+  };
+
+  const handleSortPrice = (): void => {
+    setSortBy((prev) => (prev === 'price' ? null : 'price'));
+  };
+
+  const handleSortDistance = (): void => {
+    if (sortBy === 'distance') {
+      setSortBy(null);
+      return;
+    }
+
+    setSortBy('distance');
+
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position: GeolocationPosition) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          });
+        },
+        (error: GeolocationPositionError) => {
+          console.warn('Ошибка получения геолокации:', error);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  };
+
+  const handleToggleTwoSeats = (): void => {
+    setFilterTwoSeats((prev) => !prev);
+  };
+
+  const handleToggleTag = (tag: string): void => {
+    setFilterTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleResetFilters = (): void => {
+    setQuery('');
+    setAiQuery('');
+    setFilterDay(null);
+    setSortBy(null);
+    setFilterTwoSeats(false);
+    setFilterTags([]);
+  };
+
+  const availableFilterTags = useMemo<string[]>(() => {
+    const tagSet = new Set<string>(DEFAULT_FILTER_TAGS);
+    rides.forEach((ride) => {
+      if (Array.isArray(ride.tags)) {
+        ride.tags.forEach((tag) => {
+          const trimmed = tag.trim();
+          if (trimmed) {
+            tagSet.add(trimmed);
+          }
+        });
+      }
+    });
+    return Array.from(tagSet);
+  }, [rides]);
+
   const filteredRides = useMemo(() => {
     let result = rides;
 
@@ -56,12 +242,23 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       result = result.filter((r) => getRideDayKey(r) === filterDay);
     }
 
+    if (filterTwoSeats) {
+      result = result.filter((r) => (r.availableSeats ?? 0) >= 2);
+    }
+
+    if (filterTags.length > 0) {
+      result = result.filter((r) => {
+        const rideTags = r.tags ?? [];
+        return filterTags.every((selectedTag) => rideTags.includes(selectedTag));
+      });
+    }
+
     if (query.trim()) {
       result = filterRidesByNlpQuery(result, query);
     }
 
-    return result;
-  }, [rides, query, filterDay]);
+    return sortRides(result, sortBy, userLocation);
+  }, [rides, query, filterDay, filterTwoSeats, filterTags, sortBy, userLocation]);
 
   return (
     <Box sx={{ pb: { xs: 12, sm: 8 } }}>
@@ -170,6 +367,113 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
           </Button>
         </Stack>
       </Paper>
+
+      {/* Панель фильтров и сортировки */}
+      <Box
+        sx={{
+          mb: 1.5,
+          overflowX: 'auto',
+          py: 0.5,
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+        }}
+      >
+        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 'max-content' }}>
+          {/* Сортировка по времени */}
+          <Chip
+            icon={<AccessTimeIcon sx={{ fontSize: 18 }} />}
+            label="По времени"
+            size="small"
+            clickable
+            color={sortBy === 'time' ? 'primary' : 'default'}
+            variant={sortBy === 'time' ? 'filled' : 'outlined'}
+            onClick={handleSortTime}
+            sx={{
+              fontWeight: sortBy === 'time' ? 700 : 500,
+              borderRadius: 2.5,
+              boxShadow: sortBy === 'time' ? '0 2px 8px rgba(0, 113, 227, 0.28)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          />
+
+          {/* Сортировка по цене */}
+          <Chip
+            icon={<PaymentsIcon sx={{ fontSize: 18 }} />}
+            label="По цене"
+            size="small"
+            clickable
+            color={sortBy === 'price' ? 'primary' : 'default'}
+            variant={sortBy === 'price' ? 'filled' : 'outlined'}
+            onClick={handleSortPrice}
+            sx={{
+              fontWeight: sortBy === 'price' ? 700 : 500,
+              borderRadius: 2.5,
+              boxShadow: sortBy === 'price' ? '0 2px 8px rgba(0, 113, 227, 0.28)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          />
+
+          {/* Сортировка по расстоянию */}
+          <Chip
+            icon={<NearMeIcon sx={{ fontSize: 18 }} />}
+            label="По расстоянию"
+            size="small"
+            clickable
+            color={sortBy === 'distance' ? 'primary' : 'default'}
+            variant={sortBy === 'distance' ? 'filled' : 'outlined'}
+            onClick={handleSortDistance}
+            sx={{
+              fontWeight: sortBy === 'distance' ? 700 : 500,
+              borderRadius: 2.5,
+              boxShadow: sortBy === 'distance' ? '0 2px 8px rgba(0, 113, 227, 0.28)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          />
+
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+
+          {/* Фильтр: от 2 мест */}
+          <Chip
+            icon={<AirlineSeatReclineNormalIcon sx={{ fontSize: 18 }} />}
+            label="От 2 мест"
+            size="small"
+            clickable
+            color={filterTwoSeats ? 'secondary' : 'default'}
+            variant={filterTwoSeats ? 'filled' : 'outlined'}
+            onClick={handleToggleTwoSeats}
+            sx={{
+              fontWeight: filterTwoSeats ? 700 : 500,
+              borderRadius: 2.5,
+              boxShadow: filterTwoSeats ? '0 2px 8px rgba(156, 39, 176, 0.28)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          />
+
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.5, my: 0.5 }} />
+
+          {/* Фильтры по тегам */}
+          {availableFilterTags.map((tag) => {
+            const isSelected = filterTags.includes(tag);
+            return (
+              <Chip
+                key={tag}
+                label={tag}
+                size="small"
+                clickable
+                color={isSelected ? 'info' : 'default'}
+                variant={isSelected ? 'filled' : 'outlined'}
+                onClick={() => handleToggleTag(tag)}
+                sx={{
+                  fontWeight: isSelected ? 700 : 500,
+                  borderRadius: 2.5,
+                  boxShadow: isSelected ? '0 2px 8px rgba(2, 136, 209, 0.28)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              />
+            );
+          })}
+        </Stack>
+      </Box>
 
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2.5 }}>
         {DAY_KEYS.map((day) => (
@@ -281,11 +585,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
           <Button
             variant="outlined"
             size="small"
-            onClick={() => {
-              setQuery('');
-              setAiQuery('');
-              setFilterDay(null);
-            }}
+            onClick={handleResetFilters}
             sx={{ borderRadius: 2.5, fontWeight: 600, px: 2 }}
           >
             Сбросить фильтры
