@@ -45,7 +45,7 @@ const createAppTheme = (mode: PaletteMode): Theme => {
       palette: {
         mode,
         primary: {
-          main: '#0071e3',
+          main: isDark ? '#38bdf8' : '#0071e3',
           light: '#47a1ff',
           dark: '#005bb5',
           contrastText: '#ffffff',

@@ -585,11 +585,7 @@ async function getRides(req, res) {
             u.phone as driver_phone,
             u.rating as driver_rating,
             u.avatar_url as driver_avatar_url,
-            (
-                SELECT COUNT(*)::int
-                FROM reviews rev
-                WHERE rev.reviewee_id = r.driver_id
-            ) as driver_reviews_count,
+            COALESCE(rev_counts.cnt, 0)::int as driver_reviews_count,
             v.brand,
             NULL::text as model,
             v.color,
@@ -645,6 +641,11 @@ async function getRides(req, res) {
         FROM rides r
         LEFT JOIN users u ON r.driver_id = u.id
         LEFT JOIN vehicles v ON r.vehicle_id = v.id
+        LEFT JOIN (
+            SELECT reviewee_id, COUNT(*) as cnt 
+            FROM reviews 
+            GROUP BY reviewee_id
+        ) rev_counts ON rev_counts.reviewee_id = r.driver_id
         WHERE ${whereClause}
         ORDER BY r.departure_time ASC
         LIMIT $${limitIdx} OFFSET $${offsetIdx}

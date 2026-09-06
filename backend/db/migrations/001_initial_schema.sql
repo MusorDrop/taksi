@@ -134,6 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
 CREATE INDEX IF NOT EXISTS idx_rides_parent_ride_id ON rides(parent_ride_id);
 CREATE INDEX IF NOT EXISTS idx_rides_start_point ON rides USING GIST (start_point);
 CREATE INDEX IF NOT EXISTS idx_rides_end_point ON rides USING GIST (end_point);
+CREATE INDEX IF NOT EXISTS idx_rides_start_point_geog ON rides USING GIST (((start_point)::geography));
+CREATE INDEX IF NOT EXISTS idx_rides_end_point_geog ON rides USING GIST (((end_point)::geography));
 
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id ON matches(ride_id);
 CREATE INDEX IF NOT EXISTS idx_matches_passenger_id ON matches(passenger_id);

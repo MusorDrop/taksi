@@ -25,7 +25,7 @@ interface FindRidesScreenProps {
 }
 
 export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenProps) {
-  const { user, rides, passengerRideIds, joinRide, leaveRide, isRidesLoading, ridesError, fetchRides } = useApp();
+  const { user, rides, passengerRideIds, isRidesLoading, ridesError, fetchRides } = useApp();
   const [query, setQuery] = useState<string>('');
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiQuery, setAiQuery] = useState<string>('');
@@ -335,8 +335,6 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               ride={ride}
               isPassenger={passengerRideIds.includes(ride.id) || Boolean(user?.id && ride.passengerIds?.includes(user.id))}
               isDriver={Boolean(user?.id && ride.driverId === user.id)}
-              onJoin={(selectedDay) => joinRide(ride.id, selectedDay)}
-              onLeave={() => leaveRide(ride.id)}
             />
           ))}
         </Stack>

@@ -178,6 +178,7 @@ export default function AuthScreen() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={loading}
+              autoComplete="username"
               slotProps={{
                 input: {
                   startAdornment: (
@@ -196,6 +197,7 @@ export default function AuthScreen() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
+              autoComplete="current-password"
               slotProps={{
                 input: {
                   startAdornment: (
