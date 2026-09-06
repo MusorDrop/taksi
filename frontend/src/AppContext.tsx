@@ -21,6 +21,8 @@ export interface AppContextValue {
   joinRide: (rideId: string, selectedDay?: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
   deleteRide: (rideId: string) => Promise<void>;
+  startRide: (rideId: string) => Promise<void>;
+  finishRide: (rideId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -175,6 +177,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (rideData.vehicleId) {
         payload.vehicle_id = rideData.vehicleId;
+      }
+
+      if (rideData.description) {
+        payload.description = rideData.description;
+      }
+
+      if (rideData.tags && rideData.tags.length > 0) {
+        payload.tags = rideData.tags;
       }
 
       const response = await api.post<{ message: string; ride: BackendRide }>('/api/rides', payload);
@@ -386,6 +396,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [fetchRides],
   );
 
+  const startRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      try {
+        const response = await api.post<{ message: string; ride: BackendRide }>(`/api/rides/${rideId}/start`);
+        if (response?.ride) {
+          const updated = mapBackendRideToRide(response.ride);
+          setRides((prev) => prev.map((r) => (r.id === rideId ? updated : r)));
+        } else {
+          await fetchRides();
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка начала поездки';
+        setRidesError(message);
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
+  const finishRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      try {
+        const response = await api.post<{ message: string; ride: BackendRide }>(`/api/rides/${rideId}/finish`);
+        if (response?.ride) {
+          const updated = mapBackendRideToRide(response.ride);
+          setRides((prev) => prev.map((r) => (r.id === rideId ? updated : r)));
+        } else {
+          await fetchRides();
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка завершения поездки';
+        setRidesError(message);
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
   const contextValue = useMemo<AppContextValue>(
     () => ({
       user,
@@ -405,6 +453,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       joinRide,
       leaveRide,
       deleteRide,
+      startRide,
+      finishRide,
     }),
     [
       user,
@@ -423,6 +473,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       passengerRideIds,
       joinRide,
       leaveRide,
+      deleteRide,
+      startRide,
+      finishRide,
     ],
   );
 
