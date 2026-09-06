@@ -2,6 +2,7 @@
   <h1>🚕 Попутка ИИ (Студенческий райдшеринг)</h1>
   <p><b>Умная платформа совместных поездок для студентов УрФУ, работающая на базе ИИ.</b></p>
 
+
   
   <p>
     <img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js" />
