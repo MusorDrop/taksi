@@ -12,7 +12,6 @@ export const DAY_SHORT: Record<DayKey, string> = {
   Sun: 'Вс',
 };
 
-
 export const DAY_FULL: Record<DayKey, string> = {
   Mon: 'Понедельник',
   Tue: 'Вторник',

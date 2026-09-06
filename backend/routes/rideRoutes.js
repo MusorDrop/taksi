@@ -28,6 +28,10 @@ router.get('/', rideController.getRides);
 router.get('/route-preview', rideController.getRoutePreview);
 router.post('/route-preview', rideController.getRoutePreview);
 
+// Получение списка поездок текущего пользователя
+router.get('/my', authenticateToken, rideController.getMyRides);
+router.get('/my-rides', authenticateToken, rideController.getMyRides);
+
 // Получение информации о конкретной поездке по ID (🔵-9)
 router.get('/:id', rideController.getRideById);
 
