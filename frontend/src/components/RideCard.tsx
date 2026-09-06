@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState, useCallback } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Stack from '@mui/material/Stack';
@@ -94,11 +94,11 @@ interface RideCardProps {
   isPassenger?: boolean;
   isDriver?: boolean;
   onJoin?: (selectedDay?: string) => void | Promise<void>;
-  onLeave?: () => void;
+  onLeave?: () => void | Promise<void>;
 }
 
-export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide, joinRide, deleteRide, startRide, finishRide, user } = useApp();
+function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
+  const { kickPassenger, updateRide, joinRide, leaveRide, deleteRide, startRide, finishRide, user } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
@@ -198,6 +198,18 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       setIsDeletingRide(false);
     }
   };
+
+  const handleLeaveRide = useCallback(async (): Promise<void> => {
+    try {
+      if (onLeave) {
+        await onLeave();
+      } else {
+        await leaveRide(ride.id);
+      }
+    } catch {
+      // Ошибка отмены участия обрабатывается в AppContext
+    }
+  }, [onLeave, leaveRide, ride.id]);
 
   const isPlanned = ride.status === 'planned' || ride.status === 'scheduled' || !ride.status;
   const isRideActive = ride.status === 'active';
@@ -1006,7 +1018,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   )}
                 </Stack>
               )}
-              {!isDriver && isPassenger && onLeave && !isCompleted && (
+              {!isDriver && isPassenger && !isCompleted && (
                 <Button
                   fullWidth
                   variant="outlined"
@@ -1014,14 +1026,14 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   color="error"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onLeave();
+                    handleLeaveRide();
                   }}
                   sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
                 >
                   Отменить участие
                 </Button>
               )}
-              {!isDriver && !isPassenger && onJoin && !isJoinDisabled && (
+              {!isDriver && !isPassenger && !isJoinDisabled && (
                 <Button
                   fullWidth
                   variant="contained"
@@ -1222,3 +1234,10 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     </Card>
   );
 }
+
+/**
+ * Оптимизированный компонент карточки поездки с React.memo для предотвращения O(N) ререндеров ленты
+ */
+const RideCard = memo(RideCardComponent);
+
+export default RideCard;
