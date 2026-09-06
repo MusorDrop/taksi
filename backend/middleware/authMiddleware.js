@@ -21,7 +21,7 @@ async function authenticateToken(req, res, next) {
 
     let decoded;
     try {
-        decoded = jwt.verify(token, JWT_SECRET);
+        decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     } catch (err) {
         return res.status(403).json({ error: 'Недействительный или истекший токен' });
     }
