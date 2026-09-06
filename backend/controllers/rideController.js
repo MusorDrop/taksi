@@ -1,42 +1,8 @@
 const pool = require('../db');
 const yandexMaps = require('../services/yandexMaps');
-
-// Известные координаты ключевых локаций Екатеринбурга (lon: долгота, lat: широта)
-const KNOWN_LOCATIONS = {
-    'уралмаш': { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' },
-    'новокольцовский': { lon: 60.7712, lat: 56.7686, name: 'Кампус Новокольцовский' },
-    'кампус': { lon: 60.7712, lat: 56.7686, name: 'Кампус Новокольцовский' },
-    'центр': { lon: 60.6057, lat: 56.8389, name: 'Центр' },
-    'урфу': { lon: 60.6534, lat: 56.8439, name: 'Главный корпус УрФУ' },
-    'мира': { lon: 60.6534, lat: 56.8439, name: 'Мира 19' },
-    'втузгородок': { lon: 60.6530, lat: 56.8430, name: 'Втузгородок' },
-    'академический': { lon: 60.5186, lat: 56.7865, name: 'Академический' },
-    'жби': { lon: 60.6860, lat: 56.8285, name: 'ЖБИ' },
-    'вокзал': { lon: 60.6054, lat: 56.8584, name: 'Ж/Д Вокзал' },
-    'ботаника': { lon: 60.6310, lat: 56.7970, name: 'Ботаника' },
-    'юго-западный': { lon: 60.5530, lat: 56.8040, name: 'Юго-Западный' },
-    'пионерский': { lon: 60.6380, lat: 56.8610, name: 'Пионерский' },
-    'эльмаш': { lon: 60.6320, lat: 56.8920, name: 'Эльмаш' },
-    'виз': { lon: 60.5400, lat: 56.8360, name: 'ВИЗ' },
-    'сортировка': { lon: 60.5280, lat: 56.8720, name: 'Сортировка' },
-    'химмаш': { lon: 60.6720, lat: 56.7450, name: 'Химмаш' },
-    'библиотека': { lon: 60.6130, lat: 56.8340, name: 'Центральная библиотека' }
-};
-
-const DEFAULT_START = { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' };
-const DEFAULT_END = { lon: 60.7712, lat: 56.7686, name: 'Новокольцовский' };
-
-// Регулярное выражение для валидации UUID
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Валидация формата UUID
- * @param {string} id - Проверяемый идентификатор
- * @returns {boolean} true, если id является корректным UUID
- */
-function isValidUuid(id) {
-    return typeof id === 'string' && UUID_REGEX.test(id);
-}
+const { KNOWN_LOCATIONS, DEFAULT_START, DEFAULT_END } = require('../utils/locations');
+const { isValidUuid, UUID_REGEX } = require('../utils/validation');
+const { getPassengersForRide } = require('../utils/rideUtils');
 
 /**
  * Определение координат точки по переданному объекту, координатам или названию
@@ -112,42 +78,9 @@ function extractUserId(req) {
 }
 
 /**
- * Определение, попадает ли время отправления в часы пик
- * Часы пик: с 07:30 до 09:30 и с 17:00 до 19:00 (время Екатеринбурга)
- * @param {Date|string} dateInput - Время отправления
- * @returns {boolean} true, если время в интервале часа пик
+ * Определение часа пик через единый сервис yandexMaps (🔵-1)
  */
-function isPeakHour(dateInput) {
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (isNaN(date.getTime())) {
-        return false;
-    }
-
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-        timeZone: process.env.APP_TIMEZONE || 'Asia/Yekaterinburg',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    });
-    const parts = formatter.formatToParts(date);
-    const hourPart = parts.find((p) => p.type === 'hour');
-    const minutePart = parts.find((p) => p.type === 'minute');
-
-    if (!hourPart || !minutePart) {
-        return false;
-    }
-
-    const hours = parseInt(hourPart.value, 10);
-    const minutes = parseInt(minutePart.value, 10);
-    const totalMinutes = hours * 60 + minutes;
-
-    // Утренний час пик: с 07:30 (450 мин) до 09:30 (570 мин)
-    const isMorningPeak = totalMinutes >= 450 && totalMinutes <= 570;
-    // Вечерний час пик: с 17:00 (1020 мин) до 19:00 (1140 мин)
-    const isEveningPeak = totalMinutes >= 1020 && totalMinutes <= 1140;
-
-    return isMorningPeak || isEveningPeak;
-}
+const isPeakHour = yandexMaps.isPeakHour;
 
 /**
  * Расчет расстояния между двумя точками в километрах через PostGIS
@@ -171,16 +104,12 @@ async function calculateDistanceKm(client, startLon, startLat, endLon, endLat) {
 }
 
 /**
- * Расчет базовой стоимости поездки: Дистанция (км) * 6 руб (с коэффициентом 1.3 в часы пик)
+ * Расчет базовой стоимости поездки через единую функцию yandexMaps (🔵-2)
  * @param {number} distanceKm - Дистанция поездки в километрах
- * @param {boolean} isPeak - Флаг часа пик
  * @returns {number} Рассчитанная цена
  */
-function calculateBasePrice(distanceKm, isPeak) {
-    const ratePerKm = 6;
-    const peakMultiplier = isPeak ? 1.3 : 1.0;
-    const price = distanceKm * ratePerKm * peakMultiplier;
-    return Math.round(price * 100) / 100;
+function calculateBasePrice(distanceKm) {
+    return yandexMaps.calculateTripPrice(distanceKm * 1000, 0).base_price;
 }
 
 /**
@@ -276,18 +205,14 @@ function mapRideRow(row) {
         end_lon: Number(row.end_lon),
         end_lat: Number(row.end_lat),
         distance_km: distanceKm,
-        distanceKm: distanceKm,
         distance_meters: row.distance_meters !== null && row.distance_meters !== undefined ? Number(row.distance_meters) : Math.round(distanceKm * 1000),
         duration_seconds: row.duration_seconds !== null && row.duration_seconds !== undefined ? Number(row.duration_seconds) : null,
         route_polyline: row.route_polyline || null,
         is_peak: isPeak,
-        isPeak: isPeak,
         base_price: basePrice,
         price: basePrice,
         current_price: currentPrice,
-        currentPrice: currentPrice,
         passenger_ids: passengerIds,
-        passengerIds: passengerIds,
         passengers: passengers,
         total_seats: row.total_seats,
         available_seats: row.available_seats,
@@ -309,6 +234,11 @@ async function createRide(req, res) {
     const driverId = extractUserId(req);
     if (!driverId) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    // Проверка роли пользователя (🟡-6: пассажиры не могут создавать поездки в качестве водителя)
+    if (req.user && req.user.role === 'passenger') {
+        return res.status(403).json({ error: 'Пользователи с ролью "passenger" не могут создавать поездки' });
     }
 
     const rawStart = req.body.start_point || req.body.from || (
@@ -608,7 +538,16 @@ async function getRides(req, res) {
         conditions.push(`ST_DWithin(r.end_point::geography, ST_SetSRID(ST_MakePoint($${lonIdx}, $${latIdx}), 4326)::geography, $${radIdx})`);
     }
 
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+
     const whereClause = conditions.join(' AND ');
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
     const selectQuery = `
         SELECT 
             r.id,
@@ -644,6 +583,7 @@ async function getRides(req, res) {
             r.duration_seconds,
             r.route_polyline,
             r.created_at,
+            COUNT(*) OVER() AS full_count,
             COALESCE(
                 (
                     SELECT array_agg(m.passenger_id::text)
@@ -675,22 +615,20 @@ async function getRides(req, res) {
         LEFT JOIN users u ON r.driver_id = u.id
         WHERE ${whereClause}
         ORDER BY r.departure_time ASC
-        LIMIT 50
+        LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 
     try {
         const result = await pool.query(selectQuery, params);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
         const rides = result.rows.map(mapRideRow);
 
-        return res.json({ count: rides.length, rides });
+        return res.json({ count: rides.length, total_count: totalCount, page, limit, rides });
     } catch (err) {
         console.error('Ошибка получения списка поездок:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка поездок' });
     }
 }
-
-/** Алиас для соответствия спецификации */
-const getAllRides = getRides;
 
 /**
  * Присоединение пассажира к поездке
@@ -767,27 +705,8 @@ async function joinRide(req, res) {
         `;
         const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price, selectedDay]);
 
-        // Получение актуального списка пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
-
-        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
-        const passengers = passengersRes.rows[0]?.passengers || [];
+        // Получение актуального списка пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
         const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
@@ -863,27 +782,8 @@ async function leaveRide(req, res) {
             [rideId]
         );
 
-        // Получение актуального списка пассажиров после отмены участия
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
-
-        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
-        const passengers = passengersRes.rows[0]?.passengers || [];
+        // Получение актуального списка пассажиров после отмены участия (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
         const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
@@ -1050,8 +950,8 @@ async function updateRide(req, res) {
             basePrice = Math.round(parsedVal * 100) / 100;
         } else if (coordsChanged) {
             const distanceKm = await calculateDistanceKm(client, startLon, startLat, endLon, endLat);
-            const isPeak = isPeakHour(departureTime);
-            basePrice = calculateBasePrice(distanceKm, isPeak);
+            const trip = yandexMaps.calculateTripPrice(distanceKm * 1000, 0, departureTime);
+            basePrice = trip.base_price;
         }
         if (basePrice <= 0) {
             await client.query('ROLLBACK');
@@ -1143,24 +1043,8 @@ async function updateRide(req, res) {
             rideId
         ]);
 
-        // Получаем актуальный список пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
+        // Получаем актуальный список пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
 
         await client.query('COMMIT');
 
@@ -1172,8 +1056,8 @@ async function updateRide(req, res) {
             driver_phone: driverInfo.phone,
             driver_rating: driverInfo.rating,
             driver_avatar_url: driverInfo.avatar_url || null,
-            passenger_ids: passengersRes.rows[0]?.passenger_ids || [],
-            passengers: passengersRes.rows[0]?.passengers || []
+            passenger_ids,
+            passengers
         };
 
         const mappedRide = mapRideRow(combinedRow);
@@ -1249,29 +1133,10 @@ async function kickPassenger(req, res) {
             [rideId]
         );
 
-        // Получаем оставшихся пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
+        // Получаем оставшихся пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids: remainingPassengerIds, passengers: remainingPassengers } = await getPassengersForRide(client, rideId);
 
         await client.query('COMMIT');
-
-        const remainingPassengerIds = passengersRes.rows[0]?.passenger_ids || [];
-        const remainingPassengers = passengersRes.rows[0]?.passengers || [];
 
         return res.json({
             message: 'Пассажир успешно исключен из поездки',
@@ -1540,13 +1405,11 @@ async function getRoutePreview(req, res) {
             distance_meters: routeData.distance_meters,
             duration_seconds: routeData.duration_seconds,
             distance_km: routeData.distance_km,
-            distanceKm: routeData.distance_km,
             duration_min: routeData.duration_minutes,
-            durationMin: routeData.duration_minutes,
+            duration_minutes: routeData.duration_minutes,
             price: priceInfo.base_price,
             base_price: priceInfo.base_price,
             is_peak: priceInfo.is_peak,
-            isPeak: priceInfo.is_peak,
             route_polyline: routeData.route_polyline,
             polyline: routeData.route_polyline?.coordinates || routeData.route_polyline
         });
@@ -1837,7 +1700,6 @@ async function finishRide(req, res) {
 module.exports = {
     createRide,
     getRides,
-    getAllRides,
     getRideById,
     getRoutePreview,
     deleteRide,

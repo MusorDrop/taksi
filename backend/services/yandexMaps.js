@@ -1,42 +1,11 @@
 const pool = require('../db');
 
-// Координатные границы Екатеринбурга по умолчанию (долгота lon, широта lat)
-// Юго-Запад: [56.60, 60.20], Северо-Восток: [57.05, 61.05]
-const EKATERINBURG_BOUNDS = {
-    minLon: 60.20,
-    minLat: 56.60,
-    maxLon: 61.05,
-    maxLat: 57.05,
-    // Формат bbox для Yandex Suggest HTTP API: lon1,lat1~lon2,lat2
-    bbox: '60.20,56.60~61.05,57.05',
-    // Формат boundedBy для Yandex Maps API 2.1: [[lat1, lon1], [lat2, lon2]]
-    boundedBy: [
-        [56.60, 60.20],
-        [57.05, 61.05]
-    ]
-};
+const {
+    EKATERINBURG_BOUNDS,
+    KNOWN_LOCATIONS,
+    DEFAULT_COORDS
+} = require('../utils/locations');
 
-// Ключи локаций Екатеринбурга по умолчанию (долгота lon, широта lat)
-const KNOWN_LOCATIONS = {
-    'уралмаш': { lon: 60.5975, lat: 56.8885, name: 'Екатеринбург, район Уралмаш' },
-    'новокольцовский': { lon: 60.7712, lat: 56.7686, name: 'Екатеринбург, Кампус Новокольцовский' },
-    'центр': { lon: 60.6057, lat: 56.8389, name: 'Екатеринбург, Центр' },
-    'урфу': { lon: 60.6534, lat: 56.8439, name: 'Екатеринбург, Главный корпус УрФУ (Мира 19)' },
-    'мира': { lon: 60.6534, lat: 56.8439, name: 'Екатеринбург, улица Мира, 19' },
-    'втузгородок': { lon: 60.6530, lat: 56.8430, name: 'Екатеринбург, Втузгородок' },
-    'академический': { lon: 60.5186, lat: 56.7865, name: 'Екатеринбург, Академический' },
-    'жби': { lon: 60.6860, lat: 56.8285, name: 'Екатеринбург, ЖБИ' },
-    'ленина': { lon: 60.6120, lat: 56.8390, name: 'Екатеринбург, проспект Ленина' },
-    'кольцово': { lon: 60.8043, lat: 56.7431, name: 'Екатеринбург, Аэропорт Кольцово' },
-    'вокзал': { lon: 60.6055, lat: 56.8584, name: 'Екатеринбург, Железнодорожный вокзал' },
-    'ботаника': { lon: 60.6300, lat: 56.7970, name: 'Екатеринбург, Ботанический' },
-    'виз': { lon: 60.5400, lat: 56.8330, name: 'Екатеринбург, ВИЗ' },
-    'пионерский': { lon: 60.6400, lat: 56.8600, name: 'Екатеринбург, Пионерский' },
-    'гринвич': { lon: 60.5980, lat: 56.8295, name: 'Екатеринбург, ТРЦ Гринвич' },
-    'мега': { lon: 60.4800, lat: 56.8270, name: 'Екатеринбург, ТЦ МЕГА' }
-};
-
-const DEFAULT_COORDS = { lon: 60.6057, lat: 56.8389, name: 'Екатеринбург' };
 const REQUEST_TIMEOUT_MS = 3000;
 
 /**
@@ -93,6 +62,11 @@ async function saveToGeocodeCache(query, longitude, latitude, fullAddress) {
         const sql = `
             INSERT INTO geocode_cache (address_query, longitude, latitude, full_address)
             VALUES ($1, $2, $3, $4)
+            ON CONFLICT (address_query) DO UPDATE
+            SET longitude = EXCLUDED.longitude,
+                latitude = EXCLUDED.latitude,
+                full_address = EXCLUDED.full_address,
+                created_at = CURRENT_TIMESTAMP
         `;
         await pool.query(sql, [query.trim().toLowerCase(), longitude, latitude, fullAddress]);
     } catch (err) {

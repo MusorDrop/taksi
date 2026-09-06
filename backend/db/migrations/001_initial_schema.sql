@@ -114,18 +114,18 @@ CREATE TABLE IF NOT EXISTS reviews (
     CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id)
 );
 
--- Таблица кэша геокодирования
-DROP TABLE IF EXISTS geocode_cache CASCADE;
+-- Таблица кэша геокодирования (🔵-7: сохранение кэша между перезапусками и уникальность)
 CREATE TABLE IF NOT EXISTS geocode_cache (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     address_query TEXT NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
     latitude DOUBLE PRECISION NOT NULL,
     full_address TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_geocode_cache_address_query UNIQUE (address_query)
 );
 
-CREATE INDEX IF NOT EXISTS idx_geocode_cache_address_query ON geocode_cache(address_query);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_geocode_cache_address_query ON geocode_cache(address_query);
 
 -- Базовые индексы для ускорения поиска и гео-запросов
 CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
