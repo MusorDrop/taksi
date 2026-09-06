@@ -665,7 +665,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               sx={{
                 mb: 2.5,
                 width: '100%',
-                borderRadius: 3,
+                borderRadius: { xs: 1.5, sm: 2 },
                 overflow: 'hidden',
                 transform: 'translateZ(0)',
                 WebkitMaskImage: '-webkit-radial-gradient(white, black)',
