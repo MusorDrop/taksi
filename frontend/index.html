@@ -15,6 +15,17 @@
     <meta property="og:image" content="https://bolt.new/static/og_default.png">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="https://bolt.new/static/og_default.png">
+    <style>
+      /* Приподнимаем элементы интерфейса Яндекс Карт, чтобы их не обрезали закругленные углы */
+      ymaps[class$="-map-copyrights-promo"],
+      ymaps[class$="-copyright"],
+      ymaps[class*="copyrights-pane"],
+      ymaps[class$="-gototech"] {
+        margin-bottom: 8px !important;
+        margin-left: 4px !important;
+        margin-right: 4px !important;
+      }
+    </style>
   </head>
   
   <body>
