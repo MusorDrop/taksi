@@ -13,13 +13,6 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE ride_status AS ENUM ('scheduled', 'in_progress', 'completed', 'cancelled');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-
-DO $$ BEGIN
     CREATE TYPE match_status AS ENUM ('accepted', 'completed', 'cancelled');
 EXCEPTION
     WHEN duplicate_object THEN null;
@@ -61,19 +54,25 @@ CREATE TABLE IF NOT EXISTS rides (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     driver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     vehicle_id UUID REFERENCES vehicles(id) ON DELETE SET NULL,
+    parent_ride_id UUID REFERENCES rides(id) ON DELETE SET NULL,
     departure_time TIMESTAMP WITH TIME ZONE NOT NULL,
     start_point GEOMETRY(Point, 4326) NOT NULL,
     end_point GEOMETRY(Point, 4326) NOT NULL,
     route_line GEOMETRY(LineString, 4326),
     total_seats INTEGER NOT NULL DEFAULT 4,
     available_seats INTEGER NOT NULL DEFAULT 4,
-    status ride_status NOT NULL DEFAULT 'scheduled',
-    base_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    status VARCHAR(20) NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'active', 'completed', 'cancelled')),
+    base_price NUMERIC(10, 2) NOT NULL,
     ride_type VARCHAR(20) DEFAULT 'one_off',
     regular_days VARCHAR(255),
+    distance_meters INT,
+    duration_seconds INT,
+    route_polyline JSONB,
+    description TEXT,
+    tags TEXT[] NOT NULL DEFAULT '{}'::text[],
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats),
-    CONSTRAINT chk_rides_base_price CHECK (base_price >= 0)
+    CONSTRAINT chk_rides_base_price CHECK (base_price > 0)
 );
 
 -- Таблица совпадений (бронирований поездок)
@@ -90,6 +89,19 @@ CREATE TABLE IF NOT EXISTS matches (
     CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id)
 );
 
+-- Таблица экземпляров регулярных поездок (для отслеживания конкретных дат запуска)
+CREATE TABLE IF NOT EXISTS ride_instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ride_id UUID NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    instance_ride_id UUID REFERENCES rides(id) ON DELETE SET NULL,
+    date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('planned', 'active', 'completed', 'cancelled')),
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_ride_instance_date UNIQUE (ride_id, date)
+);
+
 -- Таблица отзывов и оценок
 CREATE TABLE IF NOT EXISTS reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,76 +114,42 @@ CREATE TABLE IF NOT EXISTS reviews (
     CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id)
 );
 
+-- Таблица кэша геокодирования (🔵-7: сохранение кэша между перезапусками и уникальность)
+CREATE TABLE IF NOT EXISTS geocode_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    address_query TEXT NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    full_address TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_geocode_cache_address_query UNIQUE (address_query)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_geocode_cache_address_query ON geocode_cache(address_query);
+
 -- Базовые индексы для ускорения поиска и гео-запросов
 CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
 CREATE INDEX IF NOT EXISTS idx_rides_departure_time ON rides(departure_time);
 CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
+CREATE INDEX IF NOT EXISTS idx_rides_parent_ride_id ON rides(parent_ride_id);
 CREATE INDEX IF NOT EXISTS idx_rides_start_point ON rides USING GIST (start_point);
 CREATE INDEX IF NOT EXISTS idx_rides_end_point ON rides USING GIST (end_point);
+CREATE INDEX IF NOT EXISTS idx_rides_start_point_geog ON rides USING GIST (((start_point)::geography));
+CREATE INDEX IF NOT EXISTS idx_rides_end_point_geog ON rides USING GIST (((end_point)::geography));
 
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id ON matches(ride_id);
 CREATE INDEX IF NOT EXISTS idx_matches_passenger_id ON matches(passenger_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_ride_id ON reviews(ride_id);
 
--- Индексы производительности (из бывшей миграции 003)
--- 1. Индекс на колонку is_blocked для быстрого поиска и проверки блокировки пользователей
+CREATE INDEX IF NOT EXISTS idx_ride_instances_ride_id ON ride_instances(ride_id);
+CREATE INDEX IF NOT EXISTS idx_ride_instances_instance_ride_id ON ride_instances(instance_ride_id);
+
+-- Индексы производительности
 CREATE INDEX IF NOT EXISTS idx_users_is_blocked ON users(is_blocked);
-
--- 2. Составной индекс для оптимизации агрегации пассажиров в rideController (array_agg в getRides, joinRide, leaveRide)
 CREATE INDEX IF NOT EXISTS idx_matches_ride_id_status ON matches(ride_id, status);
-
--- 3. Составной индекс для быстрого поиска поездок по статусу и времени отправления с поддержкой сортировки
 CREATE INDEX IF NOT EXISTS idx_rides_status_departure_time ON rides(status, departure_time);
-
--- 4. Индексы на внешние ключи (Foreign Keys) для предотвращения Seq Scan и ускорения JOIN / каскадных операций
 CREATE INDEX IF NOT EXISTS idx_vehicles_driver_id ON vehicles(driver_id);
 CREATE INDEX IF NOT EXISTS idx_rides_vehicle_id ON rides(vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewee_id ON reviews(reviewee_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewer_id ON reviews(reviewer_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_ride_reviewer_reviewee ON reviews(ride_id, reviewer_id, reviewee_id);
-
--- Обеспечение наличия ограничений для ранее созданных таблиц (идемпотентный ALTER)
-DO $$ BEGIN
-    ALTER TABLE users ADD CONSTRAINT chk_users_rating CHECK (rating >= 1.0 AND rating <= 5.0);
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE rides ADD CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats);
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE matches ADD CONSTRAINT uq_matches_ride_passenger UNIQUE (ride_id, passenger_id);
-EXCEPTION
-    WHEN duplicate_object OR duplicate_table THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE vehicles ADD CONSTRAINT uq_vehicles_license_plate UNIQUE (license_plate);
-EXCEPTION
-    WHEN duplicate_object OR duplicate_table THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE vehicles ADD CONSTRAINT chk_vehicles_seats CHECK (seats >= 1 AND seats <= 8);
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE rides ADD CONSTRAINT chk_rides_base_price CHECK (base_price >= 0);
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
-DO $$ BEGIN
-    ALTER TABLE reviews ADD CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id);
-EXCEPTION
-    WHEN duplicate_object OR duplicate_table THEN null;
-END $$;
-
-
-

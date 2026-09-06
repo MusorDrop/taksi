@@ -39,12 +39,6 @@ const globalStyles = (
     styles={{
       '*': {
         WebkitTapHighlightColor: 'transparent',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-      },
-      'input, textarea': {
-        userSelect: 'text',
-        WebkitUserSelect: 'text',
       },
       html: {
         WebkitTextSizeAdjust: '100%',
@@ -52,6 +46,8 @@ const globalStyles = (
       body: {
         overscrollBehavior: 'none',
         WebkitOverflowScrolling: 'touch',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
       },
       '#root': {
         paddingTop: 'env(safe-area-inset-top)',
@@ -64,6 +60,11 @@ function AppContent() {
   const { user, isAuthLoading } = useApp();
   const [tab, setTab] = useState<TabKey>('find');
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => checkIsAdminRoute());
+
+  // Прокрутка страницы наверх при смене вкладки
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [tab]);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -88,7 +89,7 @@ function AppContent() {
           bgcolor: 'background.default',
         }}
       >
-        <Container maxWidth="md" sx={{ px: 2, pt: 2 }}>
+        <Container maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
           <AdminScreen
             onBack={() => {
               if (window.location.hash) {
@@ -131,14 +132,14 @@ function AppContent() {
       sx={{
         minHeight: '100vh',
         bgcolor: 'background.default',
-        pb: 'calc(64px + env(safe-area-inset-bottom))',
+        pb: 'calc(74px + env(safe-area-inset-bottom))',
       }}
     >
       <Container
         maxWidth="sm"
         sx={{
-          px: 2,
-          pt: 2,
+          px: { xs: 2, sm: 2.5 },
+          pt: 2.5,
         }}
       >
         {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}
@@ -154,7 +155,14 @@ function AppContent() {
 function ThemeModeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<PaletteMode>(() => {
     try {
-      return localStorage.getItem('theme-mode') === 'dark' ? 'dark' : 'light';
+      const savedMode = localStorage.getItem('theme-mode');
+      // Если у пользователя уже сохранена тема в localStorage, используем её
+      if (savedMode === 'dark' || savedMode === 'light') {
+        return savedMode;
+      }
+      // При первом заходе по умолчанию всегда устанавливаем светлую тему ('light'),
+      // игнорируя системные предпочтения prefers-color-scheme (даже если dark)
+      return 'light';
     } catch {
       return 'light';
     }

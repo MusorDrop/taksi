@@ -1,31 +1,8 @@
 const pool = require('../db');
-
-// Известные координаты ключевых локаций Екатеринбурга (lon: долгота, lat: широта)
-const KNOWN_LOCATIONS = {
-    'уралмаш': { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' },
-    'новокольцовский': { lon: 60.7712, lat: 56.7686, name: 'Кампус Новокольцовский' },
-    'центр': { lon: 60.6057, lat: 56.8389, name: 'Центр' },
-    'урфу': { lon: 60.6534, lat: 56.8439, name: 'Главный корпус УрФУ' },
-    'мира': { lon: 60.6534, lat: 56.8439, name: 'Мира 19' },
-    'втузгородок': { lon: 60.6530, lat: 56.8430, name: 'Втузгородок' },
-    'академический': { lon: 60.5186, lat: 56.7865, name: 'Академический' },
-    'жби': { lon: 60.6860, lat: 56.8285, name: 'ЖБИ' }
-};
-
-const DEFAULT_START = { lon: 60.5975, lat: 56.8885, name: 'Уралмаш' };
-const DEFAULT_END = { lon: 60.7712, lat: 56.7686, name: 'Новокольцовский' };
-
-// Регулярное выражение для валидации UUID
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Валидация формата UUID
- * @param {string} id - Проверяемый идентификатор
- * @returns {boolean} true, если id является корректным UUID
- */
-function isValidUuid(id) {
-    return typeof id === 'string' && UUID_REGEX.test(id);
-}
+const yandexMaps = require('../services/yandexMaps');
+const { KNOWN_LOCATIONS, DEFAULT_START, DEFAULT_END } = require('../utils/locations');
+const { isValidUuid, UUID_REGEX } = require('../utils/validation');
+const { getPassengersForRide } = require('../utils/rideUtils');
 
 /**
  * Определение координат точки по переданному объекту, координатам или названию
@@ -50,9 +27,10 @@ function resolvePointCoordinates(input, fallback) {
         const lower = input.toLowerCase().trim();
         for (const [key, value] of Object.entries(KNOWN_LOCATIONS)) {
             if (lower.includes(key)) {
-                return value;
+                return { ...value, name: input.trim() };
             }
         }
+        return { ...fallback, name: input.trim() };
     }
 
     return fallback;
@@ -100,42 +78,9 @@ function extractUserId(req) {
 }
 
 /**
- * Определение, попадает ли время отправления в часы пик
- * Часы пик: с 07:30 до 09:30 и с 17:00 до 19:00 (время Екатеринбурга)
- * @param {Date|string} dateInput - Время отправления
- * @returns {boolean} true, если время в интервале часа пик
+ * Определение часа пик через единый сервис yandexMaps (🔵-1)
  */
-function isPeakHour(dateInput) {
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (isNaN(date.getTime())) {
-        return false;
-    }
-
-    const formatter = new Intl.DateTimeFormat('en-GB', {
-        timeZone: process.env.APP_TIMEZONE || 'Asia/Yekaterinburg',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-    });
-    const parts = formatter.formatToParts(date);
-    const hourPart = parts.find((p) => p.type === 'hour');
-    const minutePart = parts.find((p) => p.type === 'minute');
-
-    if (!hourPart || !minutePart) {
-        return false;
-    }
-
-    const hours = parseInt(hourPart.value, 10);
-    const minutes = parseInt(minutePart.value, 10);
-    const totalMinutes = hours * 60 + minutes;
-
-    // Утренний час пик: с 07:30 (450 мин) до 09:30 (570 мин)
-    const isMorningPeak = totalMinutes >= 450 && totalMinutes <= 570;
-    // Вечерний час пик: с 17:00 (1020 мин) до 19:00 (1140 мин)
-    const isEveningPeak = totalMinutes >= 1020 && totalMinutes <= 1140;
-
-    return isMorningPeak || isEveningPeak;
-}
+const isPeakHour = yandexMaps.isPeakHour;
 
 /**
  * Расчет расстояния между двумя точками в километрах через PostGIS
@@ -159,16 +104,12 @@ async function calculateDistanceKm(client, startLon, startLat, endLon, endLat) {
 }
 
 /**
- * Расчет базовой стоимости поездки: Дистанция (км) * 6 руб (с коэффициентом 1.3 в часы пик)
+ * Расчет базовой стоимости поездки через единую функцию yandexMaps (🔵-2)
  * @param {number} distanceKm - Дистанция поездки в километрах
- * @param {boolean} isPeak - Флаг часа пик
  * @returns {number} Рассчитанная цена
  */
-function calculateBasePrice(distanceKm, isPeak) {
-    const ratePerKm = 6;
-    const peakMultiplier = isPeak ? 1.3 : 1.0;
-    const price = distanceKm * ratePerKm * peakMultiplier;
-    return Math.round(price * 100) / 100;
+function calculateBasePrice(distanceKm) {
+    return yandexMaps.calculateTripPrice(distanceKm * 1000, 0).base_price;
 }
 
 /**
@@ -241,14 +182,43 @@ function mapRideRow(row) {
         }
     }
 
+    const hasVehicleInfo = Boolean(
+        row.vehicle_id ||
+        row.brand ||
+        row.model ||
+        row.color ||
+        row.plate_number ||
+        row.vehicle_brand ||
+        row.vehicle_color ||
+        row.vehicle_license_plate
+    );
+
+    const vehicle = hasVehicleInfo ? {
+        brand: row.brand || row.vehicle_brand || null,
+        model: row.model || null,
+        color: row.color || row.vehicle_color || null,
+        plate_number: row.plate_number || row.vehicle_license_plate || row.license_plate || null
+    } : null;
+
     return {
         id: row.id,
         driver_id: row.driver_id,
         vehicle_id: row.vehicle_id || null,
+        vehicle: vehicle,
+        brand: vehicle?.brand || null,
+        model: vehicle?.model || null,
+        color: vehicle?.color || null,
+        plate_number: vehicle?.plate_number || null,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_username: row.driver_username || null,
         driver_phone: row.driver_phone || null,
         driver_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
+        average_rating: row.driver_rating !== null && row.driver_rating !== undefined ? Number(row.driver_rating) : null,
+        driver_reviews_count: Number(row.driver_reviews_count || 0),
+        reviews_count: Number(row.driver_reviews_count || 0),
+        description: row.description || null,
+        tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        parent_ride_id: row.parent_ride_id || null,
         driver_avatar_url: row.driver_avatar_url || null,
         departure_time: row.departure_time,
         start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
@@ -258,21 +228,23 @@ function mapRideRow(row) {
         end_lon: Number(row.end_lon),
         end_lat: Number(row.end_lat),
         distance_km: distanceKm,
-        distanceKm: distanceKm,
+        distance_meters: row.distance_meters !== null && row.distance_meters !== undefined ? Number(row.distance_meters) : Math.round(distanceKm * 1000),
+        duration_seconds: row.duration_seconds !== null && row.duration_seconds !== undefined ? Number(row.duration_seconds) : null,
+        route_polyline: row.route_polyline || null,
         is_peak: isPeak,
-        isPeak: isPeak,
         base_price: basePrice,
         price: basePrice,
         current_price: currentPrice,
-        currentPrice: currentPrice,
         passenger_ids: passengerIds,
-        passengerIds: passengerIds,
         passengers: passengers,
         total_seats: row.total_seats,
         available_seats: row.available_seats,
         status: row.status,
         ride_type: row.ride_type || 'one_off',
         regular_days: row.regular_days || null,
+        polyline: row.route_polyline?.coordinates || ((!isNaN(Number(row.start_lon)) && !isNaN(Number(row.end_lon)))
+            ? generateRoutePolyline(Number(row.start_lon), Number(row.start_lat), Number(row.end_lon), Number(row.end_lat))
+            : []),
         created_at: row.created_at
     };
 }
@@ -287,19 +259,43 @@ async function createRide(req, res) {
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
+    // Проверка роли пользователя (🟡-6: пассажиры не могут создавать поездки в качестве водителя)
+    if (req.user && req.user.role === 'passenger') {
+        return res.status(403).json({ error: 'Пользователи с ролью "passenger" не могут создавать поездки' });
+    }
+
     const rawStart = req.body.start_point || req.body.from || (
         req.body.start_lat !== undefined && req.body.start_lon !== undefined
             ? { lat: req.body.start_lat, lon: req.body.start_lon }
             : null
     );
-    const startCoords = resolvePointCoordinates(rawStart, DEFAULT_START);
+    let startCoords;
+    if (typeof rawStart === 'string') {
+        const geocoded = await yandexMaps.geocodeAddress(rawStart);
+        startCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+    } else {
+        startCoords = resolvePointCoordinates(rawStart, DEFAULT_START);
+    }
 
     const rawEnd = req.body.end_point || req.body.to || (
         req.body.end_lat !== undefined && req.body.end_lon !== undefined
             ? { lat: req.body.end_lat, lon: req.body.end_lon }
             : null
     );
-    const endCoords = resolvePointCoordinates(rawEnd, DEFAULT_END);
+    let endCoords;
+    if (typeof rawEnd === 'string') {
+        const geocoded = await yandexMaps.geocodeAddress(rawEnd);
+        endCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+    } else {
+        endCoords = resolvePointCoordinates(rawEnd, DEFAULT_END);
+    }
+
+    if (typeof rawStart === 'string' && typeof rawEnd === 'string' && rawStart.trim().toLowerCase() === rawEnd.trim().toLowerCase()) {
+        return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+    }
+    if (startCoords.lat === endCoords.lat && startCoords.lon === endCoords.lon) {
+        return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+    }
 
     const vehicleId = req.body.vehicle_id || null;
     if (vehicleId && !isValidUuid(vehicleId)) {
@@ -338,8 +334,18 @@ async function createRide(req, res) {
             }
         }
 
-        const distanceKm = await calculateDistanceKm(client, startCoords.lon, startCoords.lat, endCoords.lon, endCoords.lat);
-        const isPeak = isPeakHour(departureTime);
+        // Построение реального маршрута и расчет цены через сервис yandexMaps
+        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+        if (!routeData.distance_meters || routeData.distance_meters <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+        }
+
+        const calculatedPricing = yandexMaps.calculateTripPrice(
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            departureTime
+        );
 
         let basePrice;
         const hasCustomPrice = (req.body.base_price !== undefined && req.body.base_price !== null && String(req.body.base_price).trim() !== '') ||
@@ -348,19 +354,34 @@ async function createRide(req, res) {
         if (hasCustomPrice) {
             const rawVal = req.body.base_price !== undefined ? req.body.base_price : req.body.price;
             const parsedVal = parseFloat(rawVal);
-            if (isNaN(parsedVal) || parsedVal < 0) {
+            if (isNaN(parsedVal) || parsedVal <= 0) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: 'Указана некорректная стоимость поездки' });
+                return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
             }
             basePrice = Math.round(parsedVal * 100) / 100;
         } else {
-            basePrice = calculateBasePrice(distanceKm, isPeak);
+            basePrice = calculatedPricing.base_price;
+        }
+
+        if (!basePrice || basePrice <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
         }
 
         const rideType = req.body.ride_type === 'regular' ? 'regular' : 'one_off';
         const regularDays = rideType === 'regular'
             ? (Array.isArray(req.body.regular_days) ? req.body.regular_days.join(',') : (typeof req.body.regular_days === 'string' ? req.body.regular_days.trim() : null))
             : null;
+
+        const description = typeof req.body.description === 'string' && req.body.description.trim().length > 0
+            ? req.body.description.trim()
+            : null;
+        let tags = [];
+        if (Array.isArray(req.body.tags)) {
+            tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean);
+        } else if (typeof req.body.tags === 'string' && req.body.tags.trim().length > 0) {
+            tags = req.body.tags.split(',').map((t) => t.trim()).filter(Boolean);
+        }
 
         const insertQuery = `
             INSERT INTO rides (
@@ -374,7 +395,12 @@ async function createRide(req, res) {
                 available_seats,
                 status,
                 ride_type,
-                regular_days
+                regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline,
+                description,
+                tags
             ) VALUES (
                 $1,
                 $2,
@@ -384,14 +410,20 @@ async function createRide(req, res) {
                 $8,
                 $9,
                 $10,
-                'scheduled',
+                'planned',
                 $11,
-                $12
+                $12,
+                $13,
+                $14,
+                $15,
+                $16,
+                $17
             )
             RETURNING 
                 id,
                 driver_id,
                 vehicle_id,
+                parent_ride_id,
                 departure_time,
                 ST_X(start_point) as start_lon,
                 ST_Y(start_point) as start_lat,
@@ -404,6 +436,11 @@ async function createRide(req, res) {
                 status,
                 ride_type,
                 regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline,
+                description,
+                tags,
                 created_at
         `;
 
@@ -419,7 +456,12 @@ async function createRide(req, res) {
             totalSeats,
             availableSeats,
             rideType,
-            regularDays
+            regularDays,
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            JSON.stringify(routeData.route_polyline),
+            description,
+            tags
         ]);
 
         await client.query('COMMIT');
@@ -458,7 +500,7 @@ async function createRide(req, res) {
  * GET /api/rides
  */
 async function getRides(req, res) {
-    const { start_lat, start_lon, end_lat, end_lon, radius, departure_time, time } = req.query;
+    const { start_lat, start_lon, end_lat, end_lon, radius, departure_time, time, status } = req.query;
 
     const radiusResult = parseSearchRadius(radius);
     if (radiusResult.error) {
@@ -476,8 +518,17 @@ async function getRides(req, res) {
         return res.status(400).json({ error: endCheck.error });
     }
 
-    const conditions = ["r.status = 'scheduled'"];
+    const conditions = [];
     const params = [];
+
+    if (status) {
+        if (status !== 'all') {
+            params.push(status);
+            conditions.push(`r.status = $${params.length}`);
+        }
+    } else {
+        conditions.push("r.status IN ('planned', 'scheduled')");
+    }
 
     // Фильтр по времени отправления
     if (departure_time || time) {
@@ -510,18 +561,39 @@ async function getRides(req, res) {
         conditions.push(`ST_DWithin(r.end_point::geography, ST_SetSRID(ST_MakePoint($${lonIdx}, $${latIdx}), 4326)::geography, $${radIdx})`);
     }
 
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const offset = (page - 1) * limit;
+
     const whereClause = conditions.join(' AND ');
+    params.push(limit);
+    const limitIdx = params.length;
+    params.push(offset);
+    const offsetIdx = params.length;
+
     const selectQuery = `
         SELECT 
             r.id,
             r.driver_id,
             r.vehicle_id,
+            r.parent_ride_id,
+            r.description,
+            r.tags,
             u.username as driver_username,
             u.first_name as driver_first_name,
             u.last_name as driver_last_name,
             u.phone as driver_phone,
             u.rating as driver_rating,
             u.avatar_url as driver_avatar_url,
+            COALESCE(rev_counts.cnt, 0)::int as driver_reviews_count,
+            v.brand,
+            NULL::text as model,
+            v.color,
+            v.license_plate as plate_number,
+            v.brand as vehicle_brand,
+            v.color as vehicle_color,
+            v.license_plate as vehicle_license_plate,
+            v.seats as vehicle_seats,
             r.departure_time,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,
@@ -534,12 +606,16 @@ async function getRides(req, res) {
             r.status,
             r.ride_type,
             r.regular_days,
+            r.distance_meters,
+            r.duration_seconds,
+            r.route_polyline,
             r.created_at,
+            COUNT(*) OVER() AS full_count,
             COALESCE(
                 (
                     SELECT array_agg(m.passenger_id::text)
                     FROM matches m
-                    WHERE m.ride_id = r.id AND m.status = 'accepted'
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
                 ),
                 ARRAY[]::text[]
             ) AS passenger_ids,
@@ -558,30 +634,34 @@ async function getRides(req, res) {
                     )
                     FROM matches m
                     JOIN users pu ON m.passenger_id = pu.id
-                    WHERE m.ride_id = r.id AND m.status = 'accepted'
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
                 ),
                 '[]'::json
             ) AS passengers
         FROM rides r
         LEFT JOIN users u ON r.driver_id = u.id
+        LEFT JOIN vehicles v ON r.vehicle_id = v.id
+        LEFT JOIN (
+            SELECT reviewee_id, COUNT(*) as cnt 
+            FROM reviews 
+            GROUP BY reviewee_id
+        ) rev_counts ON rev_counts.reviewee_id = r.driver_id
         WHERE ${whereClause}
         ORDER BY r.departure_time ASC
-        LIMIT 50
+        LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 
     try {
         const result = await pool.query(selectQuery, params);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
         const rides = result.rows.map(mapRideRow);
 
-        return res.json({ count: rides.length, rides });
+        return res.json({ count: rides.length, total_count: totalCount, page, limit, rides });
     } catch (err) {
         console.error('Ошибка получения списка поездок:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка поездок' });
     }
 }
-
-/** Алиас для соответствия спецификации */
-const getAllRides = getRides;
 
 /**
  * Присоединение пассажира к поездке
@@ -616,8 +696,8 @@ async function joinRide(req, res) {
 
         const ride = rideCheck.rows[0];
 
-        // Проверка статуса поездки
-        if (ride.status !== 'scheduled') {
+        // Проверка статуса поездки (если поездка началась или завершена, пассажирам больше нельзя в нее вступать)
+        if (ride.status !== 'planned' && ride.status !== 'scheduled') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Присоединиться можно только к запланированной поездке' });
         }
@@ -658,27 +738,8 @@ async function joinRide(req, res) {
         `;
         const matchRes = await client.query(insertMatchQuery, [rideId, passengerId, ride.base_price, selectedDay]);
 
-        // Получение актуального списка пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
-
-        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
-        const passengers = passengersRes.rows[0]?.passengers || [];
+        // Получение актуального списка пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
         const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
@@ -732,7 +793,7 @@ async function leaveRide(req, res) {
         const ride = rideCheck.rows[0];
 
         // Проверка статуса поездки
-        if (ride.status !== 'scheduled') {
+        if (ride.status !== 'planned' && ride.status !== 'scheduled') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Отменить участие можно только в запланированной поездке' });
         }
@@ -754,27 +815,8 @@ async function leaveRide(req, res) {
             [rideId]
         );
 
-        // Получение актуального списка пассажиров после отмены участия
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
-
-        const passenger_ids = passengersRes.rows[0]?.passenger_ids || [];
-        const passengers = passengersRes.rows[0]?.passengers || [];
+        // Получение актуального списка пассажиров после отмены участия (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
         const current_price = Number(ride.base_price);
 
         await client.query('COMMIT');
@@ -840,9 +882,9 @@ async function updateRide(req, res) {
             return res.status(403).json({ error: 'Редактировать поездку может только её создатель' });
         }
 
-        if (currentRide.status !== 'scheduled') {
+        if (currentRide.status !== 'planned' && currentRide.status !== 'scheduled') {
             await client.query('ROLLBACK');
-            return res.status(400).json({ error: 'Можно редактировать только активные (запланированные) поездки' });
+            return res.status(400).json({ error: 'Можно редактировать только запланированные поездки' });
         }
 
         // Текущее число пассажиров
@@ -881,6 +923,11 @@ async function updateRide(req, res) {
             endLon = resolvedEnd.lon;
             endLat = resolvedEnd.lat;
             coordsChanged = true;
+        }
+
+        if (coordsChanged && startLon === endLon && startLat === endLat) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
         }
 
         let departureTime = currentRide.departure_time;
@@ -929,15 +976,19 @@ async function updateRide(req, res) {
         if (hasCustomPrice) {
             const rawVal = req.body.base_price !== undefined ? req.body.base_price : req.body.price;
             const parsedVal = parseFloat(rawVal);
-            if (isNaN(parsedVal) || parsedVal < 0) {
+            if (isNaN(parsedVal) || parsedVal <= 0) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: 'Указана некорректная стоимость поездки' });
+                return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
             }
             basePrice = Math.round(parsedVal * 100) / 100;
         } else if (coordsChanged) {
             const distanceKm = await calculateDistanceKm(client, startLon, startLat, endLon, endLat);
-            const isPeak = isPeakHour(departureTime);
-            basePrice = calculateBasePrice(distanceKm, isPeak);
+            const trip = yandexMaps.calculateTripPrice(distanceKm * 1000, 0, departureTime);
+            basePrice = trip.base_price;
+        }
+        if (basePrice <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
         }
 
         let rideType = currentRide.ride_type || 'one_off';
@@ -952,6 +1003,22 @@ async function updateRide(req, res) {
                 : null;
         }
 
+        let description = currentRide.description;
+        if (req.body.description !== undefined) {
+            description = typeof req.body.description === 'string' && req.body.description.trim().length > 0
+                ? req.body.description.trim()
+                : null;
+        }
+
+        let tags = currentRide.tags;
+        if (req.body.tags !== undefined) {
+            if (Array.isArray(req.body.tags)) {
+                tags = req.body.tags.map((t) => String(t).trim()).filter(Boolean);
+            } else if (typeof req.body.tags === 'string') {
+                tags = req.body.tags.split(',').map((t) => t.trim()).filter(Boolean);
+            }
+        }
+
         const updateQuery = `
             UPDATE rides
             SET
@@ -963,12 +1030,15 @@ async function updateRide(req, res) {
                 available_seats = $8,
                 vehicle_id = $9,
                 ride_type = $10,
-                regular_days = $11
-            WHERE id = $12
+                regular_days = $11,
+                description = $12,
+                tags = $13
+            WHERE id = $14
             RETURNING 
                 id,
                 driver_id,
                 vehicle_id,
+                parent_ride_id,
                 departure_time,
                 ST_X(start_point) as start_lon,
                 ST_Y(start_point) as start_lat,
@@ -981,6 +1051,11 @@ async function updateRide(req, res) {
                 status,
                 ride_type,
                 regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline,
+                description,
+                tags,
                 created_at
         `;
 
@@ -996,27 +1071,13 @@ async function updateRide(req, res) {
             vehicleId,
             rideType,
             regularDays,
+            description,
+            tags,
             rideId
         ]);
 
-        // Получаем актуальный список пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
+        // Получаем актуальный список пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids, passengers } = await getPassengersForRide(client, rideId);
 
         await client.query('COMMIT');
 
@@ -1028,8 +1089,8 @@ async function updateRide(req, res) {
             driver_phone: driverInfo.phone,
             driver_rating: driverInfo.rating,
             driver_avatar_url: driverInfo.avatar_url || null,
-            passenger_ids: passengersRes.rows[0]?.passenger_ids || [],
-            passengers: passengersRes.rows[0]?.passengers || []
+            passenger_ids,
+            passengers
         };
 
         const mappedRide = mapRideRow(combinedRow);
@@ -1083,7 +1144,7 @@ async function kickPassenger(req, res) {
             return res.status(403).json({ error: 'Только водитель может исключать пассажиров из поездки' });
         }
 
-        if (ride.status !== 'scheduled') {
+        if (ride.status !== 'planned' && ride.status !== 'scheduled') {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: 'Исключать пассажиров можно только из запланированной поездки' });
         }
@@ -1105,29 +1166,10 @@ async function kickPassenger(req, res) {
             [rideId]
         );
 
-        // Получаем оставшихся пассажиров
-        const passengersRes = await client.query(`
-            SELECT json_agg(
-                json_build_object(
-                    'id', pu.id,
-                    'name', COALESCE(pu.first_name, pu.username),
-                    'username', pu.username,
-                    'telegram', pu.username,
-                    'phone', pu.phone,
-                    'avatar_url', pu.avatar_url,
-                    'selected_day', m.selected_day
-                )
-            ) as passengers,
-            array_agg(m.passenger_id::text) as passenger_ids
-            FROM matches m
-            JOIN users pu ON m.passenger_id = pu.id
-            WHERE m.ride_id = $1 AND m.status = 'accepted'
-        `, [rideId]);
+        // Получаем оставшихся пассажиров через единую утилиту (🟡-2)
+        const { passenger_ids: remainingPassengerIds, passengers: remainingPassengers } = await getPassengersForRide(client, rideId);
 
         await client.query('COMMIT');
-
-        const remainingPassengerIds = passengersRes.rows[0]?.passenger_ids || [];
-        const remainingPassengers = passengersRes.rows[0]?.passengers || [];
 
         return res.json({
             message: 'Пассажир успешно исключен из поездки',
@@ -1164,23 +1206,30 @@ async function getRideById(req, res) {
                 r.id,
                 r.driver_id,
                 r.vehicle_id,
+                r.parent_ride_id,
                 r.departure_time,
                 ST_X(r.start_point) AS start_lon,
                 ST_Y(r.start_point) AS start_lat,
                 ST_X(r.end_point) AS end_lon,
                 ST_Y(r.end_point) AS end_lat,
+                ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
                 r.total_seats,
                 r.available_seats,
                 r.status,
                 r.base_price,
                 r.ride_type,
                 r.regular_days,
+                r.distance_meters,
+                r.duration_seconds,
+                r.route_polyline,
+                r.description,
+                r.tags,
                 r.created_at,
                 COALESCE(
                     (
                         SELECT array_agg(m.passenger_id::text)
                         FROM matches m
-                        WHERE m.ride_id = r.id AND m.status = 'accepted'
+                        WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
                     ),
                     ARRAY[]::text[]
                 ) as passenger_ids,
@@ -1198,7 +1247,7 @@ async function getRideById(req, res) {
                         )
                         FROM matches m
                         JOIN users pu ON m.passenger_id = pu.id
-                        WHERE m.ride_id = r.id AND m.status = 'accepted'
+                        WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
                     ),
                     '[]'::json
                 ) as passengers,
@@ -1208,6 +1257,15 @@ async function getRideById(req, res) {
                 u.phone AS driver_phone,
                 u.rating AS driver_rating,
                 u.avatar_url AS driver_avatar_url,
+                (
+                    SELECT COUNT(*)::int
+                    FROM reviews rev
+                    WHERE rev.reviewee_id = r.driver_id
+                ) as driver_reviews_count,
+                v.brand,
+                NULL::text AS model,
+                v.color,
+                v.license_plate AS plate_number,
                 v.brand AS vehicle_brand,
                 v.color AS vehicle_color,
                 v.license_plate AS vehicle_license_plate,
@@ -1264,6 +1322,11 @@ async function deleteRide(req, res) {
             return res.status(403).json({ error: 'Только водитель может отменить или удалить свою поездку' });
         }
 
+        if (ride.status === 'active') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Нельзя удалить активную поездку. Завершите или отмените её.' });
+        }
+
         await client.query('DELETE FROM rides WHERE id = $1', [id]);
         await client.query('COMMIT');
 
@@ -1277,17 +1340,526 @@ async function deleteRide(req, res) {
     }
 }
 
+/**
+ * Генерация точек полилинии между точкой отправления и точкой назначения
+ * @param {number} startLon - Долгота начальной точки
+ * @param {number} startLat - Широта начальной точки
+ * @param {number} endLon - Долгота конечной точки
+ * @param {number} endLat - Широта конечной точки
+ * @param {number} [numPoints=18] - Количество точек интерполяции
+ * @returns {Array<[number, number]>} Массив координат [lon, lat]
+ */
+function generateRoutePolyline(startLon, startLat, endLon, endLat, numPoints = 18) {
+    const points = [];
+    const dx = endLon - startLon;
+    const dy = endLat - startLat;
+    const midX = (startLon + endLon) / 2;
+    const midY = (startLat + endLat) / 2;
+    const devX = -dy * 0.12;
+    const devY = dx * 0.12;
+
+    for (let i = 0; i <= numPoints; i++) {
+        const t = i / numPoints;
+        const oneMinusT = 1 - t;
+        const lon = oneMinusT * oneMinusT * startLon + 2 * oneMinusT * t * (midX + devX) + t * t * endLon;
+        const lat = oneMinusT * oneMinusT * startLat + 2 * oneMinusT * t * (midY + devY) + t * t * endLat;
+        points.push([
+            Math.round(lon * 100000) / 100000,
+            Math.round(lat * 100000) / 100000
+        ]);
+    }
+    return points;
+}
+
+/**
+ * Предварительный расчет маршрута (полилиния, цена, дистанция, время в пути через Yandex Maps API)
+ * @param {object} req - Express запрос
+ * @param {object} res - Express ответ
+ */
+async function getRoutePreview(req, res) {
+    try {
+        const fromInput = req.query.from || req.body?.from || req.query.start || req.body?.start_point;
+        const toInput = req.query.to || req.body?.to || req.query.end || req.body?.end_point;
+        const timeInput = req.query.time || req.body?.time || req.query.departure_time || req.body?.departure_time;
+
+        if (!fromInput || !toInput) {
+            return res.status(400).json({ error: 'Параметры "from" и "to" обязательны для построения маршрута' });
+        }
+
+        let startCoords;
+        if (typeof fromInput === 'string') {
+            const geocoded = await yandexMaps.geocodeAddress(fromInput);
+            startCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+        } else {
+            startCoords = resolvePointCoordinates(fromInput, DEFAULT_START);
+        }
+
+        let endCoords;
+        if (typeof toInput === 'string') {
+            const geocoded = await yandexMaps.geocodeAddress(toInput);
+            endCoords = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+        } else {
+            endCoords = resolvePointCoordinates(toInput, DEFAULT_END);
+        }
+
+        if (typeof fromInput === 'string' && typeof toInput === 'string' && fromInput.trim().toLowerCase() === toInput.trim().toLowerCase()) {
+            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+        }
+        if (startCoords.lat === endCoords.lat && startCoords.lon === endCoords.lon) {
+            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+        }
+
+        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+        if (!routeData.distance_meters || routeData.distance_meters <= 0) {
+            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
+        }
+
+        const departureDate = parseDepartureTime(timeInput);
+        const priceInfo = yandexMaps.calculateTripPrice(
+            routeData.distance_meters,
+            routeData.duration_seconds,
+            departureDate
+        );
+        if (priceInfo.base_price <= 0) {
+            return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
+        }
+
+        return res.json({
+            from: {
+                address: startCoords.name,
+                lat: startCoords.lat,
+                lon: startCoords.lon
+            },
+            to: {
+                address: endCoords.name,
+                lat: endCoords.lat,
+                lon: endCoords.lon
+            },
+            start: startCoords,
+            end: endCoords,
+            start_coords: { lon: startCoords.lon, lat: startCoords.lat },
+            end_coords: { lon: endCoords.lon, lat: endCoords.lat },
+            distance_meters: routeData.distance_meters,
+            duration_seconds: routeData.duration_seconds,
+            distance_km: routeData.distance_km,
+            duration_min: routeData.duration_minutes,
+            duration_minutes: routeData.duration_minutes,
+            price: priceInfo.base_price,
+            base_price: priceInfo.base_price,
+            is_peak: priceInfo.is_peak,
+            route_polyline: routeData.route_polyline,
+            polyline: routeData.route_polyline?.coordinates || routeData.route_polyline
+        });
+    } catch (err) {
+        console.error('Ошибка в route-preview:', err);
+        return res.status(500).json({ error: 'Не удалось построить предпросмотр маршрута' });
+    }
+}
+
+/**
+ * Старт поездки водителем
+ * POST /api/rides/:id/start
+ */
+async function startRide(req, res) {
+    const rideId = req.params.id;
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
+
+    const driverId = extractUserId(req);
+    if (!driverId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const rideRes = await client.query(
+            `SELECT r.*,
+                    ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+                    ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat
+             FROM rides r
+             WHERE r.id = $1 FOR UPDATE`,
+            [rideId]
+        );
+
+        if (rideRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const currentRide = rideRes.rows[0];
+
+        if (currentRide.driver_id !== driverId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Только водитель поездки может начать её' });
+        }
+
+        if (currentRide.status === 'active') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Поездка уже началась' });
+        }
+
+        if (currentRide.status === 'completed') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Поездка уже завершена' });
+        }
+
+        if (currentRide.status === 'cancelled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Нельзя начать отмененную поездку' });
+        }
+
+        if (currentRide.status !== 'planned' && currentRide.status !== 'scheduled') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Некорректный статус поездки для старта' });
+        }
+
+        // Для регулярных поездок: создаем конкретный разовый экземпляр (копию из шаблона)
+        if (currentRide.ride_type === 'regular') {
+            const copyQuery = `
+                INSERT INTO rides (
+                    driver_id, vehicle_id, parent_ride_id, departure_time,
+                    start_point, end_point, route_line, total_seats, available_seats,
+                    status, base_price, ride_type, regular_days, distance_meters,
+                    duration_seconds, route_polyline, description, tags
+                )
+                VALUES (
+                    $1, $2, $3, CURRENT_TIMESTAMP,
+                    ST_SetSRID(ST_MakePoint($4, $5), 4326),
+                    ST_SetSRID(ST_MakePoint($6, $7), 4326),
+                    $8, $9, $10,
+                    'active', $11, 'one_off', $12, $13,
+                    $14, $15, $16, $17
+                )
+                RETURNING id
+            `;
+            const copyRes = await client.query(copyQuery, [
+                currentRide.driver_id,
+                currentRide.vehicle_id,
+                currentRide.id,
+                currentRide.start_lon,
+                currentRide.start_lat,
+                currentRide.end_lon,
+                currentRide.end_lat,
+                currentRide.route_line,
+                currentRide.total_seats,
+                currentRide.available_seats,
+                currentRide.base_price,
+                currentRide.regular_days,
+                currentRide.distance_meters,
+                currentRide.duration_seconds,
+                JSON.stringify(currentRide.route_polyline),
+                currentRide.description,
+                currentRide.tags || []
+            ]);
+            const instanceRideId = copyRes.rows[0].id;
+
+            // Запись в таблицу ride_instances
+            await client.query(`
+                INSERT INTO ride_instances (ride_id, instance_ride_id, date, status, started_at)
+                VALUES ($1, $2, CURRENT_DATE, 'active', CURRENT_TIMESTAMP)
+                ON CONFLICT (ride_id, date) DO UPDATE SET
+                    instance_ride_id = EXCLUDED.instance_ride_id,
+                    status = 'active',
+                    started_at = CURRENT_TIMESTAMP
+            `, [currentRide.id, instanceRideId]);
+
+            // Копируем пассажиров (matches) для этого экземпляра
+            await client.query(`
+                INSERT INTO matches (ride_id, passenger_id, agreed_price, status, selected_day)
+                SELECT $1, passenger_id, agreed_price, 'accepted', selected_day
+                FROM matches
+                WHERE ride_id = $2 AND status = 'accepted'
+                ON CONFLICT (ride_id, passenger_id) DO NOTHING
+            `, [instanceRideId, currentRide.id]);
+
+            await client.query('COMMIT');
+
+            const fullRes = await pool.query(`
+                SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                       u.username as driver_username, u.first_name as driver_first_name,
+                       u.last_name as driver_last_name, u.phone as driver_phone,
+                       u.rating as driver_rating, u.avatar_url as driver_avatar_url,
+                       (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                       v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                       v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
+                       r.departure_time,
+                       ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+                       ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
+                       ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+                       r.base_price, r.total_seats, r.available_seats, r.status,
+                       r.ride_type, r.regular_days, r.distance_meters, r.duration_seconds,
+                       r.route_polyline, r.created_at,
+                       COALESCE((SELECT array_agg(m.passenger_id::text) FROM matches m WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), ARRAY[]::text[]) as passenger_ids,
+                       COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
+                FROM rides r
+                LEFT JOIN users u ON r.driver_id = u.id
+                LEFT JOIN vehicles v ON r.vehicle_id = v.id
+                WHERE r.id = $1
+            `, [instanceRideId]);
+
+            return res.status(200).json({
+                message: 'Регулярная поездка успешно начата',
+                ride: mapRideRow(fullRes.rows[0])
+            });
+        }
+
+        // Для разовой поездки обновляем статус на 'active'
+        await client.query("UPDATE rides SET status = 'active' WHERE id = $1", [rideId]);
+        await client.query('COMMIT');
+
+        const fullRes = await pool.query(`
+            SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                   u.username as driver_username, u.first_name as driver_first_name,
+                   u.last_name as driver_last_name, u.phone as driver_phone,
+                   u.rating as driver_rating, u.avatar_url as driver_avatar_url,
+                   (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                   v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                   v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
+                   r.departure_time,
+                   ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+                   ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
+                   ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+                   r.base_price, r.total_seats, r.available_seats, r.status,
+                   r.ride_type, r.regular_days, r.distance_meters, r.duration_seconds,
+                   r.route_polyline, r.created_at,
+                   COALESCE((SELECT array_agg(m.passenger_id::text) FROM matches m WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), ARRAY[]::text[]) as passenger_ids,
+                   COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
+            FROM rides r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN vehicles v ON r.vehicle_id = v.id
+            WHERE r.id = $1
+        `, [rideId]);
+
+        return res.status(200).json({
+            message: 'Поездка успешно начата',
+            ride: mapRideRow(fullRes.rows[0])
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при старте поездки:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при старте поездки' });
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Завершение поездки водителем
+ * POST /api/rides/:id/finish (или /api/rides/:id/complete)
+ */
+async function finishRide(req, res) {
+    const rideId = req.params.id;
+    if (!isValidUuid(rideId)) {
+        return res.status(400).json({ error: 'Некорректный формат идентификатора поездки (UUID)' });
+    }
+
+    const driverId = extractUserId(req);
+    if (!driverId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const rideRes = await client.query(
+            'SELECT id, driver_id, status FROM rides WHERE id = $1 FOR UPDATE',
+            [rideId]
+        );
+
+        if (rideRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Поездка не найдена' });
+        }
+
+        const currentRide = rideRes.rows[0];
+
+        if (currentRide.driver_id !== driverId) {
+            await client.query('ROLLBACK');
+            return res.status(403).json({ error: 'Только водитель поездки может завершить её' });
+        }
+
+        if (currentRide.status === 'completed') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Поездка уже завершена' });
+        }
+
+        if (currentRide.status !== 'active') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Завершить можно только активную поездку' });
+        }
+
+        // Обновляем статус поездки на 'completed'
+        await client.query("UPDATE rides SET status = 'completed' WHERE id = $1", [rideId]);
+
+        // Обновляем статус бронирований на 'completed'
+        await client.query("UPDATE matches SET status = 'completed' WHERE ride_id = $1 AND status = 'accepted'", [rideId]);
+
+        // Обновляем ride_instances если это экземпляр
+        await client.query(`
+            UPDATE ride_instances
+            SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+            WHERE instance_ride_id = $1 OR (ride_id = $1 AND status = 'active')
+        `, [rideId]);
+
+        await client.query('COMMIT');
+
+        const fullRes = await pool.query(`
+            SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                   u.username as driver_username, u.first_name as driver_first_name,
+                   u.last_name as driver_last_name, u.phone as driver_phone,
+                   u.rating as driver_rating, u.avatar_url as driver_avatar_url,
+                   (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                   v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                   v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
+                   r.departure_time,
+                   ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+                   ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
+                   ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+                   r.base_price, r.total_seats, r.available_seats, r.status,
+                   r.ride_type, r.regular_days, r.distance_meters, r.duration_seconds,
+                   r.route_polyline, r.created_at,
+                   COALESCE((SELECT array_agg(m.passenger_id::text) FROM matches m WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), ARRAY[]::text[]) as passenger_ids,
+                   COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
+            FROM rides r
+            LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN vehicles v ON r.vehicle_id = v.id
+            WHERE r.id = $1
+        `, [rideId]);
+
+        return res.status(200).json({
+            message: 'Поездка успешно завершена',
+            ride: mapRideRow(fullRes.rows[0])
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Ошибка при завершении поездки:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при завершении поездки' });
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Получение списка поездок текущего пользователя (в роли водителя или пассажира)
+ * GET /api/rides/my
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ */
+async function getMyRides(req, res) {
+    const userId = extractUserId(req);
+    if (!userId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const selectQuery = `
+        SELECT 
+            r.id,
+            r.driver_id,
+            r.vehicle_id,
+            r.parent_ride_id,
+            r.description,
+            r.tags,
+            u.username as driver_username,
+            u.first_name as driver_first_name,
+            u.last_name as driver_last_name,
+            u.phone as driver_phone,
+            u.rating as driver_rating,
+            u.avatar_url as driver_avatar_url,
+            (
+                SELECT COUNT(*)::int
+                FROM reviews rev
+                WHERE rev.reviewee_id = r.driver_id
+            ) as driver_reviews_count,
+            v.brand,
+            NULL::text as model,
+            v.color,
+            v.license_plate as plate_number,
+            v.brand as vehicle_brand,
+            v.color as vehicle_color,
+            v.license_plate as vehicle_license_plate,
+            v.seats as vehicle_seats,
+            r.departure_time,
+            ST_X(r.start_point) as start_lon,
+            ST_Y(r.start_point) as start_lat,
+            ST_X(r.end_point) as end_lon,
+            ST_Y(r.end_point) as end_lat,
+            ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+            r.base_price,
+            r.total_seats,
+            r.available_seats,
+            r.status,
+            r.ride_type,
+            r.regular_days,
+            r.distance_meters,
+            r.duration_seconds,
+            r.route_polyline,
+            r.created_at,
+            COALESCE(
+                (
+                    SELECT array_agg(m.passenger_id::text)
+                    FROM matches m
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
+                ),
+                ARRAY[]::text[]
+            ) AS passenger_ids,
+            COALESCE(
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', pu.id,
+                            'name', COALESCE(pu.first_name, pu.username),
+                            'username', pu.username,
+                            'telegram', pu.username,
+                            'phone', pu.phone,
+                            'avatar_url', pu.avatar_url,
+                            'selected_day', m.selected_day
+                        )
+                    )
+                    FROM matches m
+                    JOIN users pu ON m.passenger_id = pu.id
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
+                ),
+                '[]'::json
+            ) AS passengers
+        FROM rides r
+        LEFT JOIN users u ON r.driver_id = u.id
+        LEFT JOIN vehicles v ON r.vehicle_id = v.id
+        WHERE r.driver_id = $1 OR EXISTS (
+            SELECT 1 FROM matches m2 WHERE m2.ride_id = r.id AND m2.passenger_id = $1 AND m2.status IN ('accepted', 'completed')
+        )
+        ORDER BY r.departure_time DESC
+    `;
+
+    try {
+        const result = await pool.query(selectQuery, [userId]);
+        const rides = result.rows.map(mapRideRow);
+        return res.json({ count: rides.length, rides });
+    } catch (err) {
+        console.error('Ошибка получения списка поездок пользователя:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка поездок' });
+    }
+}
+
 module.exports = {
     createRide,
     getRides,
-    getAllRides,
+    getMyRides,
     getRideById,
+    getRoutePreview,
     deleteRide,
     joinRide,
     leaveRide,
     updateRide,
     kickPassenger,
+    startRide,
+    finishRide,
+    completeRide: finishRide,
     isPeakHour,
     calculateDistanceKm,
-    calculateBasePrice
+    calculateBasePrice,
+    generateRoutePolyline
 };

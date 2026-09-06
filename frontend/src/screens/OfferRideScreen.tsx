@@ -1,4 +1,3 @@
-import { useMemo, useState, useEffect, useRef, type FormEvent } from 'react';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -15,6 +14,7 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Autocomplete from '@mui/material/Autocomplete';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import SendIcon from '@mui/icons-material/Send';
@@ -25,196 +25,67 @@ import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import RouteMap from '../components/RouteMap';
-import { useApp } from '../AppContext';
-import type { Vehicle, VehiclesResponse } from '../types';
-import { estimateDistance, formatDateString, formatPrice, getAiRecommendedPrice, isPeakTime } from '../utils';
-import { api } from '../api';
+import { formatPrice } from '../utils';
+import type { AddressOption } from '../hooks/useAddressSuggest';
+import {
+  useRideForm,
+  WEEK_DAYS,
+  AVAILABLE_TAGS,
+  AI_ACCENT,
+  getTodayDateString,
+} from '../hooks/useRideForm';
 
-/**
- * Получение текущей даты в формате YYYY-MM-DD для поля ввода даты
- */
-function getTodayDateString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-// Indigo/violet accent palette for the AI recommendation surface — kept local
-// to this screen so the rest of the app's MUI theme (blue) is untouched.
-const AI_ACCENT = {
-  bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)',
-  border: 'rgba(99, 102, 241, 0.22)',
-  iconBg: 'rgba(99, 102, 241, 0.12)',
-  iconColor: '#6366f1',
-  text: '#4338ca',
-  subtleText: '#6d28d9',
-  button: '#6366f1',
-  buttonHover: '#4f46e5',
-};
-
-interface OfferRideScreenProps {
+export interface OfferRideScreenProps {
   onNavigateToProfile?: () => void;
 }
 
+/**
+ * Экран предложения новой поездки водителем с интерактивной картой и автодополнением адресов
+ */
 export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreenProps) {
-  const { addRide, user } = useApp();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [rideType, setRideType] = useState<'one_off' | 'regular'>('one_off');
-  const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
-  const [date, setDate] = useState<string>(getTodayDateString);
-  const [time, setTime] = useState('08:00');
-  const [telegram, setTelegram] = useState(user?.telegram ?? '');
-  const [price, setPrice] = useState<string>('');
-  const [success, setSuccess] = useState(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
-  const [isVehiclesLoading, setIsVehiclesLoading] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-    };
-  }, []);
-
-  // Загрузка доступных автомобилей пользователя для привязки к поездке
-  useEffect(() => {
-    const controller = new AbortController();
-    let isMounted = true;
-
-    async function loadVehicles(): Promise<void> {
-      try {
-        const res = await api.get<VehiclesResponse>('/api/vehicles', {
-          signal: controller.signal,
-        });
-        if (isMounted && res?.vehicles) {
-          setVehicles(res.vehicles);
-          if (res.vehicles.length > 0) {
-            setSelectedVehicleId(res.vehicles[0].id);
-          }
-        }
-      } catch {
-        // При недоступности бэкенда или отмене запроса форма работает без выбора автомобиля
-      } finally {
-        if (isMounted) {
-          setIsVehiclesLoading(false);
-        }
-      }
-    }
-
-    loadVehicles();
-
-    return () => {
-      isMounted = false;
-      controller.abort();
-    };
-  }, []);
-
-  const hasNoVehicles = !isVehiclesLoading && vehicles.length === 0;
-
-  // The route distance is only "known" once both endpoints are filled in —
-  // before that, the AI box simulates not having resolved a route yet and
-  // falls back to a flat base price.
-  const distanceKm = useMemo(
-    () => (from.trim() && to.trim() ? estimateDistance(from, to) : null),
-    [from, to],
-  );
-  const peak = isPeakTime(time);
-
-  // Recalculates automatically whenever the route or the departure time
-  // changes — this is what makes the recommendation feel "live".
-  const recommendedPrice = useMemo(
-    () => getAiRecommendedPrice(distanceKm, time),
-    [distanceKm, time],
-  );
-
-  const parsedPrice = price.trim() === '' ? null : Number(price);
-  const isPriceValid = parsedPrice !== null && Number.isFinite(parsedPrice) && parsedPrice > 0;
-  const isDateOrDaysValid = rideType === 'one_off' ? Boolean(date) : regularDays.length > 0;
-  const canSubmit = Boolean(
-    !hasNoVehicles &&
-    from.trim() &&
-    to.trim() &&
-    telegram.trim() &&
-    isPriceValid &&
-    isDateOrDaysValid &&
-    time
-  );
-
-  const handleApplyRecommendation = () => {
-    setPrice(String(recommendedPrice));
-  };
-
-  const handleDayToggle = (day: string) => {
-    setRegularDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
-  };
-
-  const handleSubmit = async (e: FormEvent): Promise<void> => {
-    e.preventDefault();
-    if (!canSubmit || parsedPrice === null || isSubmitting) return;
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      const departureDate = new Date(`${date}T${time}`);
-      const departureIso = !isNaN(departureDate.getTime())
-        ? departureDate.toISOString()
-        : new Date().toISOString();
-
-      const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId);
-      const totalSeats = selectedVehicle?.seats || 4;
-
-      await addRide({
-        from,
-        to,
-        dateFormatted: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
-        dateString: rideType === 'regular' ? regularDays.join(', ') : formatDateString(departureIso),
-        departure_time: departureIso,
-        departureTime: departureIso,
-        time,
-        telegram: telegram.replace('@', ''),
-        price: parsedPrice,
-        distanceKm: distanceKm ?? estimateDistance(from, to),
-        isPeak: peak,
-        vehicleId: selectedVehicleId || undefined,
-        totalSeats,
-        rideType,
-        ride_type: rideType,
-        regularDays: rideType === 'regular' ? regularDays.join(', ') : null,
-        regular_days: rideType === 'regular' ? regularDays.join(', ') : null,
-      });
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-      setSuccess(true);
-      setFrom('');
-      setTo('');
-      setDate(getTodayDateString());
-      setTime('08:00');
-      setPrice('');
-      successTimerRef.current = setTimeout(() => {
-        setSuccess(false);
-        successTimerRef.current = null;
-      }, 3000);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Не удалось опубликовать поездку на сервере';
-      setSubmitError(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const {
+    fromSuggest,
+    toSuggest,
+    rideType,
+    setRideType,
+    regularDays,
+    handleDayToggle,
+    date,
+    setDate,
+    time,
+    setTime,
+    telegram,
+    setTelegram,
+    price,
+    setPrice,
+    description,
+    setDescription,
+    tags,
+    handleTagToggle,
+    vehicles,
+    selectedVehicleId,
+    setSelectedVehicleId,
+    hasNoVehicles,
+    isSubmitting,
+    submitError,
+    setSubmitError,
+    success,
+    canSubmit,
+    routePolyline,
+    routeDistance,
+    routeDuration,
+    startCoords,
+    endCoords,
+    recommendedPrice,
+    isPeakDemand,
+    isRouteLoading,
+    handleApplyRecommendation,
+    handleSubmit,
+  } = useRideForm();
 
   return (
-    <Box sx={{ pb: 2 }}>
-      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Создать поездку
       </Typography>
 
@@ -258,42 +129,232 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
 
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2}>
-          <TextField
-            fullWidth
-            label="Откуда (Точка А)"
-            placeholder="Например: Центральная библиотека"
-            value={from}
+          {/* Поле выбора начальной точки отправления (Откуда) с автодополнением */}
+          <Autocomplete<AddressOption | string, false, false, true>
+            freeSolo
             disabled={hasNoVehicles}
-            onChange={(e) => setFrom(e.target.value)}
+            options={fromSuggest.options}
+            loading={fromSuggest.isLoading}
+            filterOptions={(x) => x}
+            value={fromSuggest.value || null}
+            inputValue={fromSuggest.inputValue}
+            open={
+              fromSuggest.isOpen &&
+              Boolean(fromSuggest.inputValue.trim() && (fromSuggest.options.length > 0 || fromSuggest.isLoading))
+            }
+            onOpen={() => fromSuggest.setIsOpen(true)}
+            onClose={() => fromSuggest.setIsOpen(false)}
+            onInputChange={fromSuggest.handleInputChange}
+            onChange={fromSuggest.handleChange}
+            onBlur={fromSuggest.handleBlur}
+            getOptionLabel={(option) =>
+              typeof option === 'string' ? option : option.label || option.value || ''
+            }
+            isOptionEqualToValue={(option, val) => {
+              const optVal = typeof option === 'string' ? option : option.value || option.label;
+              const targetVal = typeof val === 'string' ? val : val.value || val.label;
+              return optVal === targetVal;
+            }}
+            noOptionsText={
+              fromSuggest.inputValue.trim().length < 2
+                ? 'Введите не менее 2 символов'
+                : 'Адрес в Екатеринбурге не найден'
+            }
+            loadingText="Поиск адресов в Екатеринбурге..."
             slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main' }} />
-                  </InputAdornment>
-                ),
+              popper: {
+                sx: { zIndex: 1500 },
+                modifiers: [
+                  {
+                    name: 'preventOverflow',
+                    options: { boundary: 'clippingParents' },
+                  },
+                ],
+              },
+              paper: {
+                elevation: 6,
+                sx: { borderRadius: 2, mt: 0.5 },
+              },
+              listbox: {
+                sx: { maxHeight: 280 },
               },
             }}
-          />
-          <TextField
-            fullWidth
-            label="Куда (Точка Б)"
-            placeholder="Например: Северный кампус"
-            value={to}
-            disabled={hasNoVehicles}
-            onChange={(e) => setTo(e.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <LocationOnIcon sx={{ fontSize: 20, color: 'error.main' }} />
-                  </InputAdornment>
-                ),
-              },
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                fullWidth
+                label="Откуда (Точка А)"
+                placeholder="Например: проспект Ленина 51 или Мира 19"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <InputAdornment position="start">
+                        <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+                      </InputAdornment>
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                  endAdornment: (
+                    <>
+                      {fromSuggest.isLoading ? (
+                        <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
+                      ) : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
+            renderOption={(props, option) => {
+              const { key, ...optionProps } = props;
+              const addressText = typeof option === 'string' ? option : option.label;
+              const subtitleText = typeof option === 'string' ? undefined : option.subtitle;
+              return (
+                <Box component="li" key={key} {...optionProps}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%', py: 0.5 }}>
+                    <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+                        {addressText}
+                      </Typography>
+                      {subtitleText && (
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                          {subtitleText}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+              );
             }}
           />
 
-          <RouteMap from={from || 'Точка А'} to={to || 'Точка Б'} />
+          {/* Поле выбора конечной точки назначения (Куда) с автодополнением */}
+          <Autocomplete<AddressOption | string, false, false, true>
+            freeSolo
+            disabled={hasNoVehicles}
+            options={toSuggest.options}
+            loading={toSuggest.isLoading}
+            filterOptions={(x) => x}
+            value={toSuggest.value || null}
+            inputValue={toSuggest.inputValue}
+            open={
+              toSuggest.isOpen &&
+              Boolean(toSuggest.inputValue.trim() && (toSuggest.options.length > 0 || toSuggest.isLoading))
+            }
+            onOpen={() => toSuggest.setIsOpen(true)}
+            onClose={() => toSuggest.setIsOpen(false)}
+            onInputChange={toSuggest.handleInputChange}
+            onChange={toSuggest.handleChange}
+            onBlur={toSuggest.handleBlur}
+            getOptionLabel={(option) =>
+              typeof option === 'string' ? option : option.label || option.value || ''
+            }
+            isOptionEqualToValue={(option, val) => {
+              const optVal = typeof option === 'string' ? option : option.value || option.label;
+              const targetVal = typeof val === 'string' ? val : val.value || val.label;
+              return optVal === targetVal;
+            }}
+            noOptionsText={
+              toSuggest.inputValue.trim().length < 2
+                ? 'Введите не менее 2 символов'
+                : 'Адрес в Екатеринбурге не найден'
+            }
+            loadingText="Поиск адресов в Екатеринбурге..."
+            slotProps={{
+              popper: {
+                sx: { zIndex: 1500 },
+                modifiers: [
+                  {
+                    name: 'preventOverflow',
+                    options: { boundary: 'clippingParents' },
+                  },
+                ],
+              },
+              paper: {
+                elevation: 6,
+                sx: { borderRadius: 2, mt: 0.5 },
+              },
+              listbox: {
+                sx: { maxHeight: 280 },
+              },
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                fullWidth
+                label="Куда (Точка Б)"
+                placeholder="Например: Кампус Новокольцовский"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <InputAdornment position="start">
+                        <LocationOnIcon sx={{ fontSize: 20, color: 'error.main' }} />
+                      </InputAdornment>
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                  endAdornment: (
+                    <>
+                      {toSuggest.isLoading ? (
+                        <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
+                      ) : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
+            renderOption={(props, option) => {
+              const { key, ...optionProps } = props;
+              const addressText = typeof option === 'string' ? option : option.label;
+              const subtitleText = typeof option === 'string' ? undefined : option.subtitle;
+              return (
+                <Box component="li" key={key} {...optionProps}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%', py: 0.5 }}>
+                    <LocationOnIcon sx={{ fontSize: 20, color: 'error.main', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+                        {addressText}
+                      </Typography>
+                      {subtitleText && (
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                          {subtitleText}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+              );
+            }}
+          />
+
+          <Box
+            sx={{
+              borderRadius: 3.5,
+              overflow: 'hidden',
+              border: '1px solid',
+              borderColor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+              boxShadow: (theme) =>
+                theme.palette.mode === 'dark'
+                  ? '0 4px 16px rgba(0, 0, 0, 0.25)'
+                  : '0 2px 8px -2px rgba(15, 23, 42, 0.06)',
+            }}
+          >
+            <RouteMap
+              from={fromSuggest.value || 'Точка А'}
+              to={toSuggest.value || 'Точка Б'}
+              polyline={routePolyline}
+              startCoords={startCoords}
+              endCoords={endCoords}
+              distanceKm={routeDistance}
+              durationMin={routeDuration}
+              height={280}
+            />
+          </Box>
 
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
@@ -388,7 +449,6 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          {/* Manual price input — the driver always has the final say */}
           <TextField
             fullWidth
             label="Ваша цена за место (₽)"
@@ -409,21 +469,22 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             }}
           />
 
-          {/* AI Smart Recommendation box — sits directly under the price field */}
+          {/* Карточка рекомендуемой цены с расчетом дистанции */}
           <Paper
             variant="outlined"
             sx={{
-              p: 2,
-              borderRadius: 3,
+              p: 2.25,
+              borderRadius: 3.5,
               background: AI_ACCENT.bg,
               borderColor: AI_ACCENT.border,
+              boxShadow: '0 4px 18px rgba(0, 113, 227, 0.08)',
             }}
           >
             <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
               <Box
                 sx={{
-                  width: 32,
-                  height: 32,
+                  width: 34,
+                  height: 34,
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
@@ -431,39 +492,49 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
                   bgcolor: AI_ACCENT.iconBg,
                   color: AI_ACCENT.iconColor,
                   flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(0, 113, 227, 0.2)',
                 }}
               >
                 <AutoAwesomeIcon sx={{ fontSize: 18 }} />
               </Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: AI_ACCENT.text }}>
-                Умная цена от ИИ
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: AI_ACCENT.text, letterSpacing: '-0.01em' }}>
+                Расчет стоимости маршрута
               </Typography>
-              {peak && (
+              {isRouteLoading && <CircularProgress size={16} sx={{ color: AI_ACCENT.iconColor, ml: 1 }} />}
+              {isPeakDemand && (
                 <Chip
                   icon={<BoltIcon sx={{ fontSize: 14 }} />}
                   label="Пиковый спрос +30%"
                   size="small"
                   color="warning"
-                  sx={{ fontWeight: 600, ml: 'auto' }}
+                  sx={{ fontWeight: 650, ml: 'auto', borderRadius: 2 }}
                 />
               )}
             </Stack>
 
-            <Typography variant="body2" sx={{ color: AI_ACCENT.subtleText, fontWeight: 500, mb: 1.5 }}>
-              ✨ ИИ рекомендует поставить {formatPrice(recommendedPrice)} (Учтены расстояние и пробки)
+            <Typography variant="body2" sx={{ color: AI_ACCENT.subtleText, fontWeight: 500, mb: 1.5, lineHeight: 1.5 }}>
+              {isRouteLoading
+                ? 'Связываемся с сервисом маршрутов для точного расчета...'
+                : routeDistance
+                ? `✨ Рекомендация: ${formatPrice(recommendedPrice)} (дистанция ${routeDistance} км, в пути ~${routeDuration || Math.round(routeDistance * 2.2)} мин)`
+                : '✨ Укажите точки отправления и назначения для расчета цены и построения маршрута'}
             </Typography>
 
             <Button
               fullWidth
               variant="contained"
-              disabled={hasNoVehicles}
+              disabled={hasNoVehicles || isRouteLoading}
               onClick={handleApplyRecommendation}
               sx={{
                 bgcolor: AI_ACCENT.button,
+                py: 1,
+                borderRadius: 2.5,
+                fontWeight: 700,
+                boxShadow: '0 4px 14px rgba(0, 113, 227, 0.25)',
                 '&:hover': { bgcolor: AI_ACCENT.buttonHover },
               }}
             >
-              Применить
+              Применить ({formatPrice(recommendedPrice)})
             </Button>
           </Paper>
 
@@ -490,6 +561,42 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             </FormControl>
           )}
 
+          {/* Панель выбора тегов поездки (Chips) */}
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 650, mb: 1 }}>
+              Особенности поездки
+            </Typography>
+            <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+              {AVAILABLE_TAGS.map((tag) => {
+                const isSelected = tags.includes(tag);
+                return (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    clickable={!hasNoVehicles}
+                    disabled={hasNoVehicles}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    onClick={() => handleTagToggle(tag)}
+                    sx={{ fontWeight: 600, borderRadius: 2 }}
+                  />
+                );
+              })}
+            </Stack>
+          </Box>
+
+          {/* Многострочное текстовое поле "Примечания к маршруту" (description) */}
+          <TextField
+            fullWidth
+            label="Примечания к маршруту"
+            placeholder="Например: встречаемся у главного входа, багажник свободен, едем без остановок"
+            multiline
+            rows={3}
+            disabled={hasNoVehicles}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+
           <TextField
             fullWidth
             label="Ваш Telegram (@username)"
@@ -515,7 +622,13 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
             size="large"
             disabled={!canSubmit || isSubmitting}
             startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : null}
-            sx={{ py: 1.2, fontSize: '1rem' }}
+            sx={{
+              py: 1.3,
+              borderRadius: 3,
+              fontSize: '1rem',
+              fontWeight: 700,
+              boxShadow: '0 4px 18px rgba(0, 113, 227, 0.32)',
+            }}
           >
             {isSubmitting ? 'Публикация на сервере...' : 'Опубликовать поездку'}
           </Button>

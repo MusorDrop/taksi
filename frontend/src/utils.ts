@@ -139,25 +139,35 @@ export function resolveCoordsToName(lon?: number, lat?: number, fallbackName: st
 }
 
 /**
- * Преобразование относительного пути к аватару в полный URL бэкенда
+ * Преобразование относительного пути к аватару в полный URL бэкенда с добавлением параметра для сброса кэша
  * @param url - Путь к аватару
- * @returns Полный URL аватара или undefined
+ * @returns Полный URL аватара с параметром сброса кэша или undefined
  */
 export function formatAvatarUrl(url?: string | null): string | undefined {
   if (!url || typeof url !== 'string' || url.trim() === '') {
     return undefined;
   }
   const trimmed = url.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
-  if (trimmed.startsWith('/uploads/')) {
-    return `http://localhost:3000${trimmed}`;
+
+  let fullUrl = trimmed;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    fullUrl = trimmed;
+  } else if (trimmed.startsWith('/uploads/')) {
+    fullUrl = `http://localhost:3000${trimmed}`;
+  } else if (trimmed.startsWith('uploads/')) {
+    fullUrl = `http://localhost:3000/${trimmed}`;
   }
-  if (trimmed.startsWith('uploads/')) {
-    return `http://localhost:3000/${trimmed}`;
+
+  // Обновление существующего cache-buster параметра или добавление нового
+  if (/[?&]t=\d+/.test(fullUrl)) {
+    return fullUrl.replace(/([?&]t=)\d+/, `$1${Date.now()}`);
   }
-  return trimmed;
+
+  const separator = fullUrl.includes('?') ? '&' : '?';
+  return `${fullUrl}${separator}t=${Date.now()}`;
 }
 
 /**
@@ -185,6 +195,25 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
       ? backendRide.driver_phone.replace('+', '')
       : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'));
 
+  const vehicleObj = backendRide.vehicle || (backendRide.brand || backendRide.model || backendRide.color || backendRide.plate_number || backendRide.vehicle_brand ? {
+    brand: backendRide.brand ?? backendRide.vehicle_brand ?? null,
+    model: backendRide.model ?? null,
+    color: backendRide.color ?? backendRide.vehicle_color ?? null,
+    plate_number: backendRide.plate_number ?? backendRide.vehicle_license_plate ?? null,
+  } : null);
+
+  const vehicleBrand = vehicleObj?.brand ?? backendRide.brand ?? backendRide.vehicle_brand ?? null;
+  const vehicleModel = vehicleObj?.model ?? backendRide.model ?? null;
+  const vehicleColor = vehicleObj?.color ?? backendRide.color ?? backendRide.vehicle_color ?? null;
+  const vehiclePlate = vehicleObj?.plate_number ?? backendRide.plate_number ?? backendRide.vehicle_license_plate ?? null;
+
+  const resolvedVehicle = (vehicleBrand || vehicleModel || vehicleColor || vehiclePlate) ? {
+    brand: vehicleBrand,
+    model: vehicleModel,
+    color: vehicleColor,
+    plate_number: vehiclePlate,
+  } : null;
+
   return {
     id: backendRide.id,
     driverId: backendRide.driver_id,
@@ -192,6 +221,15 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     driverUsername: backendRide.driver_username || null,
     driverPhone: backendRide.driver_phone || null,
     driverAvatarUrl: backendRide.driver_avatar_url || null,
+    vehicle: resolvedVehicle,
+    brand: vehicleBrand,
+    model: vehicleModel,
+    color: vehicleColor,
+    plate_number: vehiclePlate,
+    vehicleBrand,
+    vehicleModel,
+    vehicleColor,
+    vehiclePlateNumber: vehiclePlate,
     from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
     to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
     dateFormatted: dateString,
@@ -215,7 +253,21 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     ride_type: backendRide.ride_type || 'one_off',
     regularDays: backendRide.regular_days || null,
     regular_days: backendRide.regular_days || null,
-    averageRating: backendRide.average_rating ? Number(backendRide.average_rating) : null,
+    averageRating: backendRide.average_rating ? Number(backendRide.average_rating) : (backendRide.driver_rating ? Number(backendRide.driver_rating) : null),
+    driverRating: backendRide.driver_rating !== undefined && backendRide.driver_rating !== null ? Number(backendRide.driver_rating) : (backendRide.average_rating ? Number(backendRide.average_rating) : null),
+    driver_rating: backendRide.driver_rating !== undefined && backendRide.driver_rating !== null ? Number(backendRide.driver_rating) : (backendRide.average_rating ? Number(backendRide.average_rating) : null),
+    driverReviewsCount: Number(backendRide.driver_reviews_count || 0),
+    driver_reviews_count: Number(backendRide.driver_reviews_count || 0),
+    description: backendRide.description || null,
+    tags: Array.isArray(backendRide.tags) ? backendRide.tags : [],
+    startLon: backendRide.start_lon,
+    startLat: backendRide.start_lat,
+    endLon: backendRide.end_lon,
+    endLat: backendRide.end_lat,
+    startCoords: backendRide.start_coords,
+    endCoords: backendRide.end_coords,
+    polyline: backendRide.polyline,
+    durationMin: backendRide.duration_min,
   };
 }
 

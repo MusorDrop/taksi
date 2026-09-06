@@ -24,6 +24,14 @@ router.use(rideLimiter);
 // Получение списка поездок
 router.get('/', rideController.getRides);
 
+// Предварительный просмотр маршрута (полилиния, цена, дистанция, время)
+router.get('/route-preview', rideController.getRoutePreview);
+router.post('/route-preview', rideController.getRoutePreview);
+
+// Получение списка поездок текущего пользователя
+router.get('/my', authenticateToken, rideController.getMyRides);
+router.get('/my-rides', authenticateToken, rideController.getMyRides);
+
 // Получение информации о конкретной поездке по ID (🔵-9)
 router.get('/:id', rideController.getRideById);
 
@@ -41,6 +49,13 @@ router.patch('/:id', authenticateToken, rideController.updateRide);
 
 // Удаление / отмена поездки водителем (🟡-8)
 router.delete('/:id', authenticateToken, rideController.deleteRide);
+
+// Старт поездки водителем
+router.post('/:id/start', authenticateToken, rideController.startRide);
+
+// Завершение поездки водителем
+router.post('/:id/finish', authenticateToken, rideController.finishRide);
+router.post('/:id/complete', authenticateToken, rideController.finishRide);
 
 // Исключение пассажира водителем
 router.delete('/:id/passengers/:passengerId', authenticateToken, rideController.kickPassenger);

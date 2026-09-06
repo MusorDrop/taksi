@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "migrate": "node db/migrate.js",
+    "fix-indexes": "node db/fix_indexes.js",
     "test": "cross-env NODE_ENV=test node smoke-test.js",
     "test:smoke": "cross-env NODE_ENV=test node smoke-test.js"
   },

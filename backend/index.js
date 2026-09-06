@@ -15,10 +15,14 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localh
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
 
-// Раздача статических файлов (аватарки пользователей) с безопасными параметрами
+// Раздача статических файлов (аватарки пользователей) с безопасными параметрами и CSP-заголовками (🔵-10)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     dotfiles: 'ignore',
-    index: false
+    index: false,
+    setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Disposition', 'inline');
+    }
 }));
 
 // Роуты API
@@ -35,6 +39,33 @@ app.get('/api/health', async (req, res) => {
         res.json({ status: 'ok', time: dbRes.rows[0].now, message: 'Сервер работает, БД подключена!' });
     } catch (err) {
         res.status(500).json({ status: 'error', message: 'Ошибка подключения к БД' });
+    }
+});
+
+const rateLimit = require('express-rate-limit');
+const yandexMaps = require('./services/yandexMaps');
+
+// Ограничение частоты запросов для подсказок адресов (Suggest API)
+const suggestLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 60,
+    message: {
+        error: 'Слишком много запросов к сервису подсказок адресов. Пожалуйста, подождите минуту.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Получение подсказок адресов через Yandex Suggest API с жесткими параметрами для Екатеринбурга
+app.get('/api/suggest', suggestLimiter, async (req, res) => {
+    try {
+        const text = req.query.text || req.query.query || '';
+        const boundedBy = req.query.boundedBy || req.query.bbox || req.query.bounds;
+        const suggestions = await yandexMaps.suggestAddress(String(text), boundedBy);
+        res.json({ suggestions });
+    } catch (err) {
+        console.warn('Ошибка получения подсказок адресов:', err);
+        res.status(500).json({ error: 'Ошибка получения подсказок адресов' });
     }
 });
 
@@ -58,6 +89,9 @@ app.use((err, req, res, next) => {
 
 // Запуск сервера
 if (require.main === module) {
+    if (!process.env.YANDEX_MAPS_API_KEY) {
+        console.warn('⚠ YANDEX_MAPS_API_KEY не задан — геокодирование работает в ограниченном fallback-режиме (🔵-9)');
+    }
     app.listen(PORT, () => {
         console.log(`Сервер запущен на порту ${PORT}`);
     });

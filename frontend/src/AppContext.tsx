@@ -13,13 +13,16 @@ export interface AppContextValue {
   rides: Ride[];
   isRidesLoading: boolean;
   ridesError: string | null;
-  fetchRides: (signal?: AbortSignal) => Promise<void>;
+  fetchRides: (signal?: AbortSignal, silent?: boolean) => Promise<void>;
   addRide: (ride: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName' | 'currentPrice'>) => Promise<void> | void;
   updateRide: (rideId: string, payload: Record<string, unknown>) => Promise<void>;
   kickPassenger: (rideId: string, passengerId: string) => Promise<void>;
   passengerRideIds: string[];
   joinRide: (rideId: string, selectedDay?: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
+  deleteRide: (rideId: string) => Promise<void>;
+  startRide: (rideId: string) => Promise<void>;
+  finishRide: (rideId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -30,7 +33,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rides, setRides] = useState<Ride[]>([]);
   const [isRidesLoading, setIsRidesLoading] = useState<boolean>(false);
   const [ridesError, setRidesError] = useState<string | null>(null);
-  const [passengerRideIds, setPassengerRideIds] = useState<string[]>([]);
+  // Вычисление идентификаторов забронированных поездок текущего пользователя на лету
+  const passengerRideIds = useMemo<string[]>(() => {
+    if (!user) return [];
+    return rides
+      .filter((r) => Boolean(r.passengerIds?.includes(user.id)))
+      .map((r) => r.id);
+  }, [rides, user]);
 
   // Проверка существующего токена при инициализации приложения
   useEffect(() => {
@@ -120,16 +129,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  // Загрузка списка поездок из API
-  const fetchRides = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    setIsRidesLoading(true);
+  // Загрузка списка поездок из API (параметр silent отключает полноэкранный индикатор загрузки при фоновом поллинге)
+  const fetchRides = useCallback(async (signal?: AbortSignal, silent: boolean = false): Promise<void> => {
+    if (!silent) {
+      setIsRidesLoading(true);
+    }
     setRidesError(null);
     try {
       const response = await api.get<RidesResponse>('/api/rides', { signal });
       if (response && Array.isArray(response.rides)) {
         const mapped = response.rides.map(mapBackendRideToRide);
         setRides(mapped);
-      } else {
+      } else if (!silent) {
         setRides([]);
       }
     } catch (err: unknown) {
@@ -138,9 +149,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const message = err instanceof Error ? err.message : 'Не удалось загрузить поездки';
       setRidesError(message);
-      setRides([]);
+      if (!silent) {
+        setRides([]);
+      }
     } finally {
-      setIsRidesLoading(false);
+      if (!silent) {
+        setIsRidesLoading(false);
+      }
     }
   }, []);
 
@@ -151,6 +166,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return () => {
       controller.abort();
+    };
+  }, [fetchRides]);
+
+  // Фоновый опрос (поллинг) каждые 10 секунд для синхронизации свободных мест и статусов поездок
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      fetchRides(undefined, true);
+    }, 10000);
+
+    return () => {
+      clearInterval(intervalId);
     };
   }, [fetchRides]);
 
@@ -174,6 +200,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (rideData.vehicleId) {
         payload.vehicle_id = rideData.vehicleId;
+      }
+
+      if (rideData.description) {
+        payload.description = rideData.description;
+      }
+
+      if (rideData.tags && rideData.tags.length > 0) {
+        payload.tags = rideData.tags;
       }
 
       const response = await api.post<{ message: string; ride: BackendRide }>('/api/rides', payload);
@@ -224,28 +258,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Синхронизация забронированных поездок текущего пользователя при обновлении списка
-  useEffect(() => {
-    if (!user) return;
-    const userJoinedRideIds = rides
-      .filter((r) => r.passengerIds && r.passengerIds.includes(user.id))
-      .map((r) => r.id);
-    if (userJoinedRideIds.length > 0) {
-      setPassengerRideIds((prev) => {
-        const next = Array.from(new Set([...prev, ...userJoinedRideIds]));
-        if (next.length === prev.length && next.every((id, i) => id === prev[i])) {
-          return prev;
-        }
-        return next;
-      });
-    }
-  }, [rides, user]);
-
   const joinRide = useCallback(async (rideId: string, selectedDay?: string): Promise<void> => {
-    // 1. Мгновенное оптимистичное обновление списка забронированных поездок пассажира
-    setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
-
-    // 2. Мгновенный оптимистичный пересчет мест с сохранением фиксированной цены
+    // 1. Мгновенный оптимистичный пересчет мест с сохранением фиксированной цены
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -315,10 +329,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user, fetchRides]);
 
   const leaveRide = useCallback(async (rideId: string): Promise<void> => {
-    // 1. Мгновенное оптимистичное удаление из списка моих поездок
-    setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
-
-    // 2. Мгновенный оптимистичный пересчет свободных мест с фиксированной ценой
+    // 1. Мгновенный оптимистичный пересчет свободных мест с фиксированной ценой
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -369,6 +380,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [user, fetchRides]);
 
+  const deleteRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      setRides((prev) => prev.filter((r) => r.id !== rideId));
+      try {
+        await api.delete('/api/rides/' + rideId);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка отмены поездки';
+        setRidesError(message);
+        fetchRides();
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
+  const startRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      try {
+        const response = await api.post<{ message: string; ride: BackendRide }>(`/api/rides/${rideId}/start`);
+        if (response?.ride) {
+          const updated = mapBackendRideToRide(response.ride);
+          setRides((prev) => prev.map((r) => (r.id === rideId ? updated : r)));
+        } else {
+          await fetchRides();
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка начала поездки';
+        setRidesError(message);
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
+  const finishRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      try {
+        const response = await api.post<{ message: string; ride: BackendRide }>(`/api/rides/${rideId}/finish`);
+        if (response?.ride) {
+          const updated = mapBackendRideToRide(response.ride);
+          setRides((prev) => prev.map((r) => (r.id === rideId ? updated : r)));
+        } else {
+          await fetchRides();
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка завершения поездки';
+        setRidesError(message);
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
   const contextValue = useMemo<AppContextValue>(
     () => ({
       user,
@@ -387,6 +451,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       passengerRideIds,
       joinRide,
       leaveRide,
+      deleteRide,
+      startRide,
+      finishRide,
     }),
     [
       user,
@@ -405,6 +472,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       passengerRideIds,
       joinRide,
       leaveRide,
+      deleteRide,
+      startRide,
+      finishRide,
     ],
   );
 

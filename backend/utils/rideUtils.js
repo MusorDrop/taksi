@@ -18,6 +18,7 @@ async function getPassengersForRide(client, rideId) {
                         'id', pu.id,
                         'name', COALESCE(pu.first_name, pu.username),
                         'username', pu.username,
+                        'telegram', pu.username,
                         'phone', pu.phone,
                         'avatar_url', pu.avatar_url,
                         'selected_day', m.selected_day

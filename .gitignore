@@ -1,7 +1,8 @@
 node_modules/
 .bolt/
 dist/
-dist-ssr/
+dist-ssr/ 
+
 
 # Environment files
 .env
@@ -18,6 +19,7 @@ uploads/
 scratch/
 .repomix-output.*
 .artifacts/
+tests/
 
 # Antigravity Project Scaffolding
 .agents/
