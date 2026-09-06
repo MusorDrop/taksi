@@ -33,7 +33,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [rides, setRides] = useState<Ride[]>([]);
   const [isRidesLoading, setIsRidesLoading] = useState<boolean>(false);
   const [ridesError, setRidesError] = useState<string | null>(null);
-  const [passengerRideIds, setPassengerRideIds] = useState<string[]>([]);
+  // Вычисление идентификаторов забронированных поездок текущего пользователя на лету
+  const passengerRideIds = useMemo<string[]>(() => {
+    if (!user) return [];
+    return rides
+      .filter((r) => Boolean(r.passengerIds?.includes(user.id)))
+      .map((r) => r.id);
+  }, [rides, user]);
 
   // Проверка существующего токена при инициализации приложения
   useEffect(() => {
@@ -252,28 +258,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Синхронизация забронированных поездок текущего пользователя при обновлении списка
-  useEffect(() => {
-    if (!user) return;
-    const userJoinedRideIds = rides
-      .filter((r) => r.passengerIds && r.passengerIds.includes(user.id))
-      .map((r) => r.id);
-    if (userJoinedRideIds.length > 0) {
-      setPassengerRideIds((prev) => {
-        const next = Array.from(new Set([...prev, ...userJoinedRideIds]));
-        if (next.length === prev.length && next.every((id, i) => id === prev[i])) {
-          return prev;
-        }
-        return next;
-      });
-    }
-  }, [rides, user]);
-
   const joinRide = useCallback(async (rideId: string, selectedDay?: string): Promise<void> => {
-    // 1. Мгновенное оптимистичное обновление списка забронированных поездок пассажира
-    setPassengerRideIds((prev) => (prev.includes(rideId) ? prev : [...prev, rideId]));
-
-    // 2. Мгновенный оптимистичный пересчет мест с сохранением фиксированной цены
+    // 1. Мгновенный оптимистичный пересчет мест с сохранением фиксированной цены
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -343,10 +329,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user, fetchRides]);
 
   const leaveRide = useCallback(async (rideId: string): Promise<void> => {
-    // 1. Мгновенное оптимистичное удаление из списка моих поездок
-    setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
-
-    // 2. Мгновенный оптимистичный пересчет свободных мест с фиксированной ценой
+    // 1. Мгновенный оптимистичный пересчет свободных мест с фиксированной ценой
     setRides((prev) =>
       prev.map((r) => {
         if (r.id !== rideId) return r;
@@ -400,7 +383,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteRide = useCallback(
     async (rideId: string): Promise<void> => {
       setRides((prev) => prev.filter((r) => r.id !== rideId));
-      setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
       try {
         await api.delete('/api/rides/' + rideId);
       } catch (err: unknown) {

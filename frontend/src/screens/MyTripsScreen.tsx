@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
@@ -9,13 +9,23 @@ import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 
 export default function MyTripsScreen() {
-  const { rides, user, passengerRideIds, leaveRide } = useApp();
+  const { rides, user, passengerRideIds } = useApp();
   const [tab, setTab] = useState(0);
 
-  const passengerRides = rides.filter(
-    (r) => passengerRideIds.includes(r.id) || Boolean(user?.id && r.passengerIds?.includes(user.id))
+  // Мемоизация списка поездок, в которых текущий пользователь участвует как пассажир
+  const passengerRides = useMemo(
+    () =>
+      rides.filter(
+        (r) => passengerRideIds.includes(r.id) || Boolean(user?.id && r.passengerIds?.includes(user.id))
+      ),
+    [rides, passengerRideIds, user?.id]
   );
-  const driverRides = rides.filter((r) => r.driverId === user?.id);
+
+  // Мемоизация списка поездок, опубликованных текущим пользователем как водителем
+  const driverRides = useMemo(
+    () => rides.filter((r) => r.driverId === user?.id),
+    [rides, user?.id]
+  );
 
   return (
     <Box sx={{ pb: { xs: 12, sm: 8 } }}>
@@ -92,7 +102,6 @@ export default function MyTripsScreen() {
                   key={ride.id}
                   ride={ride}
                   isPassenger
-                  onLeave={() => leaveRide(ride.id)}
                 />
               ))}
             </Stack>
