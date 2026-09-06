@@ -31,6 +31,7 @@ const rideRoutes = require('./routes/rideRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 // Базовый роут проверки здоровья сервера
 app.get('/api/health', async (req, res) => {
@@ -75,6 +76,7 @@ app.use('/api/rides', rideRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Fallback для несуществующих маршрутов (404)
 app.use((req, res) => {
