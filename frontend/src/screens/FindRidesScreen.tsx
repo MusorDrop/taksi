@@ -12,7 +12,6 @@ import Paper from '@mui/material/Paper';
 import Alert from '@mui/material/Alert';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import FilterListIcon from '@mui/icons-material/FilterList';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import AddIcon from '@mui/icons-material/Add';
@@ -75,39 +74,55 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
 
   return (
     <Box sx={{ pb: 2 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
           Найти поездку
         </Typography>
         <Button
           size="small"
+          variant="text"
           startIcon={<RefreshIcon />}
           onClick={() => fetchRides()}
           disabled={isRidesLoading}
+          sx={{ borderRadius: 2, fontWeight: 600, px: 1.5 }}
         >
           Обновить
         </Button>
       </Stack>
 
       {ridesError && (
-        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2.5 }}>
           {ridesError}
         </Alert>
       )}
 
       {/* Quick AI Search */}
       <Paper
-        variant="outlined"
+        elevation={0}
         sx={{
-          p: 1.5,
-          mb: 2,
-          borderRadius: 3,
-          borderColor: 'primary.light',
-          bgcolor: 'primary.main',
+          p: 2,
+          mb: 2.5,
+          borderRadius: 3.5,
+          background: 'linear-gradient(135deg, #0071e3 0%, #0056b3 50%, #003e85 100%)',
+          boxShadow: '0 8px 24px -4px rgba(0, 113, 227, 0.35)',
+          color: '#ffffff',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        <Typography variant="caption" sx={{ color: 'white', fontWeight: 600, display: 'block', mb: 1 }}>
-          <AutoAwesomeIcon sx={{ fontSize: 14, mr: 0.5, mb: -0.3 }} />
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: 'white',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.6,
+            mb: 1.25,
+            fontSize: '0.85rem',
+          }}
+        >
+          <AutoAwesomeIcon sx={{ fontSize: 16 }} />
           Быстрый поиск ИИ
         </Typography>
         <Stack direction="row" spacing={1}>
@@ -126,10 +141,17 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             sx={{
               '& .MuiOutlinedInput-root': {
                 bgcolor: 'white',
-                borderRadius: 2,
+                borderRadius: 2.5,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                '& fieldset': { borderColor: 'transparent' },
+                '&:hover fieldset': { borderColor: 'transparent' },
+                '&.Mui-focused fieldset': { borderColor: 'white' },
+              },
+              '& .MuiOutlinedInput-input': {
+                color: '#0f172a',
               },
               '& .MuiOutlinedInput-input::placeholder': {
-                color: '#757575',
+                color: '#64748b',
                 opacity: 1,
               },
             }}
@@ -142,7 +164,13 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             sx={{
               bgcolor: 'white',
               color: 'primary.main',
-              '&:hover': { bgcolor: 'grey.100' },
+              borderRadius: 2.5,
+              fontWeight: 700,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.92)',
+                transform: 'scale(1.04)',
+              },
               minWidth: 44,
               px: 1.5,
             }}
@@ -153,19 +181,24 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       </Paper>
 
       {/* Filters */}
-      <Stack direction="row" spacing={1} sx={{ mb: 2 }} alignItems="center">
-        <FilterListIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+      <Stack direction="row" spacing={1} sx={{ mb: 1.75 }} alignItems="center">
         <TextField
+          fullWidth
           size="small"
           placeholder="Фильтр по назначению"
           value={filterDest}
           onChange={(e) => setFilterDest(e.target.value)}
-          sx={{ flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 2.5,
+              bgcolor: 'background.paper',
+            },
+          }}
           slotProps={{
             input: {
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                  <SearchIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                 </InputAdornment>
               ),
             },
@@ -173,7 +206,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
         />
       </Stack>
 
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2.5 }}>
         {DAY_KEYS.map((day) => (
           <Chip
             key={day}
@@ -182,7 +215,14 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             color={filterDay === day ? 'primary' : 'default'}
             variant={filterDay === day ? 'filled' : 'outlined'}
             onClick={() => setFilterDay(filterDay === day ? null : day)}
-            sx={{ fontWeight: 600, minWidth: 40 }}
+            sx={{
+              fontWeight: 650,
+              minWidth: 42,
+              borderRadius: 2,
+              py: 0.5,
+              boxShadow: filterDay === day ? '0 2px 8px rgba(0, 113, 227, 0.28)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
           />
         ))}
       </Box>
@@ -213,34 +253,36 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
         <Paper
           variant="outlined"
           sx={{
-            p: 4,
-            borderRadius: 3,
+            p: { xs: 3.5, sm: 4.5 },
+            borderRadius: 4,
             textAlign: 'center',
             bgcolor: 'background.paper',
             borderStyle: 'dashed',
             borderColor: 'primary.light',
+            boxShadow: '0 2px 12px -2px rgba(15, 23, 42, 0.04)',
           }}
         >
           <Box
             sx={{
-              width: 64,
-              height: 64,
+              width: 68,
+              height: 68,
               borderRadius: '50%',
-              bgcolor: 'primary.light',
+              bgcolor: 'primary.main',
               color: 'white',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               mx: 'auto',
-              mb: 2,
+              mb: 2.25,
+              boxShadow: '0 6px 20px -2px rgba(0, 113, 227, 0.35)',
             }}
           >
-            <DirectionsCarIcon sx={{ fontSize: 32 }} />
+            <DirectionsCarIcon sx={{ fontSize: 34 }} />
           </Box>
-          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.015em' }}>
             Поездок пока нет, стань первым водителем!
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 360, mx: 'auto', mb: 2.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 380, mx: 'auto', mb: 3, lineHeight: 1.6 }}>
             Опубликуйте свой маршрут между кампусами или корпусами УрФУ, разделите расходы на бензин и помогите другим студентам добраться с комфортом.
           </Typography>
           {onNavigateToOffer && (
@@ -249,18 +291,26 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               size="medium"
               startIcon={<AddIcon />}
               onClick={onNavigateToOffer}
-              sx={{ px: 3, py: 1 }}
+              sx={{ px: 3.5, py: 1.1, borderRadius: 2.5, fontWeight: 700, boxShadow: '0 4px 16px rgba(0, 113, 227, 0.3)' }}
             >
               Создать поездку
             </Button>
           )}
         </Paper>
       ) : filteredRides.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 4,
+            borderRadius: 3.5,
+            textAlign: 'center',
+            boxShadow: '0 2px 8px -2px rgba(15, 23, 42, 0.04)',
+          }}
+        >
+          <Typography variant="subtitle1" sx={{ fontWeight: 650, mb: 0.5 }}>
             Поездки не найдены
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
             По выбранным фильтрам ничего не найдено. Попробуйте сбросить параметры поиска.
           </Typography>
           <Button
@@ -272,12 +322,13 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               setFilterDay(null);
               setFilterDest('');
             }}
+            sx={{ borderRadius: 2.5, fontWeight: 600, px: 2 }}
           >
             Сбросить фильтры
           </Button>
         </Paper>
       ) : (
-        <Stack spacing={1.5}>
+        <Stack spacing={2}>
           {filteredRides.map((ride) => (
             <RideCard
               key={ride.id}

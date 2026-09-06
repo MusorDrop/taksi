@@ -99,24 +99,26 @@ export default function AuthScreen() {
         pt: 'env(safe-area-inset-top)',
         background:
           theme.palette.mode === 'dark'
-            ? 'linear-gradient(160deg, #0b1e33 0%, #102a4a 40%, #1c3f66 100%)'
-            : 'linear-gradient(160deg, #1565c0 0%, #1976d2 40%, #42a5f5 100%)',
+            ? 'linear-gradient(160deg, #0b1329 0%, #0f172a 45%, #1e293b 100%)'
+            : 'linear-gradient(160deg, #0071e3 0%, #005bb5 45%, #003e85 100%)',
       }}
     >
       <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto' }}>
         <Stack spacing={1} alignItems="center" sx={{ mb: 4, mt: -2 }}>
           <Box
             sx={{
-              width: 88,
-              height: 88,
+              width: 92,
+              height: 92,
               borderRadius: '50%',
               overflow: 'hidden',
-              bgcolor: 'rgba(255,255,255,0.15)',
+              bgcolor: 'rgba(255,255,255,0.18)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255,255,255,0.2)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '2px solid rgba(255,255,255,0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
             }}
           >
             <img
@@ -125,10 +127,10 @@ export default function AuthScreen() {
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           </Box>
-          <Typography variant="h4" sx={{ color: 'white', fontWeight: 700, letterSpacing: '-0.5px' }}>
+          <Typography variant="h4" sx={{ color: 'white', fontWeight: 750, letterSpacing: '-0.03em' }}>
             Попутка
           </Typography>
-          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
             Делитесь поездками в кампус УрФУ и экономьте вместе
           </Typography>
         </Stack>
@@ -136,9 +138,9 @@ export default function AuthScreen() {
         <Box
           sx={{
             bgcolor: 'background.paper',
-            borderRadius: 4,
-            p: 3,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+            borderRadius: 4.5,
+            p: { xs: 3, sm: 4 },
+            boxShadow: '0 24px 60px -12px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.08)',
           }}
           component="form"
           onSubmit={handleSubmit}
@@ -152,18 +154,18 @@ export default function AuthScreen() {
             variant="fullWidth"
             sx={{ mb: 2.5 }}
           >
-            <Tab label="Вход" sx={{ fontWeight: 600 }} />
-            <Tab label="Регистрация" sx={{ fontWeight: 600 }} />
+            <Tab label="Вход" sx={{ fontWeight: 650, fontSize: '0.95rem' }} />
+            <Tab label="Регистрация" sx={{ fontWeight: 650, fontSize: '0.95rem' }} />
           </Tabs>
 
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>
             {isRegisterMode
               ? 'Создайте аккаунт, чтобы искать попутчиков и публиковать поездки'
               : 'Войдите, используя свои учетные данные'}
           </Typography>
 
           {errorMessage && (
-            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+            <Alert severity="error" sx={{ mb: 2.5, borderRadius: 2.5 }}>
               {errorMessage}
             </Alert>
           )}
@@ -230,7 +232,14 @@ export default function AuthScreen() {
               variant="contained"
               size="large"
               disabled={loading}
-              sx={{ mt: 1, py: 1.2, fontSize: '1rem' }}
+              sx={{
+                mt: 1,
+                py: 1.3,
+                borderRadius: 2.75,
+                fontSize: '1rem',
+                fontWeight: 700,
+                boxShadow: '0 4px 18px rgba(0, 113, 227, 0.35)',
+              }}
             >
               {loading ? (
                 <CircularProgress size={24} sx={{ color: 'white' }} />

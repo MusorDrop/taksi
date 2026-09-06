@@ -338,7 +338,9 @@ export function useRideForm(): UseRideFormReturn {
       setRouteDistance(null);
       setRouteDuration(null);
       setStartCoords(null);
-      endCoords && setEndCoords(null);
+      if (endCoords) {
+        setEndCoords(null);
+      }
 
       successTimerRef.current = setTimeout(() => {
         setSuccess(false);
