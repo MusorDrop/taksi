@@ -13,7 +13,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
@@ -43,6 +42,7 @@ import { useApp } from '../AppContext';
 import RouteMap from './RouteMap';
 import ReviewsDialog from './ReviewsDialog';
 import ReviewDialog from './ReviewDialog';
+import RideEditDialog from './RideEditDialog';
 
 /**
  * Преобразование дня недели (Mon, Tue...) в краткий русский формат (Пн, Вт...)
@@ -98,7 +98,7 @@ interface RideCardProps {
 }
 
 function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide, joinRide, leaveRide, deleteRide, startRide, finishRide, user } = useApp();
+  const { kickPassenger, joinRide, leaveRide, deleteRide, startRide, finishRide, user } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
@@ -147,13 +147,6 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
 
   // Редактирование маршрута водителем
   const [editDialogOpen, setEditDialogOpen] = useState<boolean>(false);
-  const [editFrom, setEditFrom] = useState<string>(ride.from);
-  const [editTo, setEditTo] = useState<string>(ride.to);
-  const [editTime, setEditTime] = useState<string>(ride.time);
-  const [editPrice, setEditPrice] = useState<string>(String(ride.price));
-  const [editSeats, setEditSeats] = useState<string>(String(ride.totalSeats || 4));
-  const [isUpdatingRide, setIsUpdatingRide] = useState<boolean>(false);
-  const [editError, setEditError] = useState<string | null>(null);
   // Отмена поездки водителем
   const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
   const [isDeletingRide, setIsDeletingRide] = useState<boolean>(false);
@@ -236,33 +229,6 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
       setKickError(message);
     } finally {
       setKickingPassengerId(null);
-    }
-  };
-
-  const handleSaveRide = async (): Promise<void> => {
-    const numPrice = Number(editPrice);
-    const numSeats = Number(editSeats);
-    if (!editFrom.trim() || !editTo.trim() || !editTime.trim() || !numPrice || !numSeats) {
-      setEditError('Заполните все обязательные поля');
-      return;
-    }
-    setIsUpdatingRide(true);
-    setEditError(null);
-    try {
-      await updateRide(ride.id, {
-        from: editFrom.trim(),
-        to: editTo.trim(),
-        time: editTime.trim(),
-        price: numPrice,
-        seats: numSeats,
-        total_seats: numSeats,
-      });
-      setEditDialogOpen(false);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Не удалось обновить маршрут';
-      setEditError(message);
-    } finally {
-      setIsUpdatingRide(false);
     }
   };
 
@@ -959,11 +925,6 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                       startIcon={<EditIcon />}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setEditFrom(ride.from);
-                        setEditTo(ride.to);
-                        setEditTime(ride.time);
-                        setEditPrice(String(ride.price));
-                        setEditSeats(String(ride.totalSeats || 4));
                         setEditDialogOpen(true);
                       }}
                       sx={{ py: 0.9, borderRadius: 2.5, fontWeight: 650 }}
@@ -1057,70 +1018,11 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
       </Collapse>
 
       {/* Модальное окно редактирования поездки */}
-      <Dialog
+      <RideEditDialog
         open={editDialogOpen}
-        onClose={() => !isUpdatingRide && setEditDialogOpen(false)}
-        onClick={(e) => e.stopPropagation()}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 600 }}>Редактировать маршрут</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {editError && (
-              <Alert severity="error" onClose={() => setEditError(null)}>
-                {editError}
-              </Alert>
-            )}
-            <TextField
-              fullWidth
-              label="Откуда"
-              value={editFrom}
-              onChange={(e) => setEditFrom(e.target.value)}
-            />
-            <TextField
-              fullWidth
-              label="Куда"
-              value={editTo}
-              onChange={(e) => setEditTo(e.target.value)}
-            />
-            <TextField
-              fullWidth
-              label="Время выезда"
-              type="time"
-              value={editTime}
-              onChange={(e) => setEditTime(e.target.value)}
-            />
-            <TextField
-              fullWidth
-              label="Цена за место (₽)"
-              type="number"
-              value={editPrice}
-              onChange={(e) => setEditPrice(e.target.value)}
-            />
-            <TextField
-              fullWidth
-              label="Всего мест"
-              type="number"
-              value={editSeats}
-              onChange={(e) => setEditSeats(e.target.value)}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setEditDialogOpen(false)} disabled={isUpdatingRide} color="inherit">
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveRide}
-            disabled={isUpdatingRide}
-            startIcon={isUpdatingRide ? <CircularProgress size={16} color="inherit" /> : null}
-          >
-            {isUpdatingRide ? 'Сохранение...' : 'Сохранить'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onClose={() => setEditDialogOpen(false)}
+        ride={ride}
+      />
 
       {/* Модальное окно создания отзыва */}
       <ReviewDialog

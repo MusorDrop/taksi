@@ -8,9 +8,16 @@ import Paper from '@mui/material/Paper';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 
-export default function MyTripsScreen() {
+export interface MyTripsScreenProps {
+  initialTab?: 'passenger' | 'driver';
+}
+
+export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
   const { rides, user, passengerRideIds } = useApp();
-  const [tab, setTab] = useState(0);
+  const [activeTab, setActiveTab] = useState<number | null>(null);
+
+  // Выбранная вкладка: приоритет у активного переключения пользователем, иначе берется initialTab
+  const tab = activeTab ?? (initialTab === 'driver' ? 1 : 0);
 
   // Мемоизация списка поездок, в которых текущий пользователь участвует как пассажир
   const passengerRides = useMemo(
@@ -18,13 +25,13 @@ export default function MyTripsScreen() {
       rides.filter(
         (r) => passengerRideIds.includes(r.id) || Boolean(user?.id && r.passengerIds?.includes(user.id))
       ),
-    [rides, passengerRideIds, user?.id]
+    [rides, passengerRideIds, user]
   );
 
   // Мемоизация списка поездок, опубликованных текущим пользователем как водителем
   const driverRides = useMemo(
     () => rides.filter((r) => r.driverId === user?.id),
-    [rides, user?.id]
+    [rides, user]
   );
 
   return (
@@ -45,7 +52,7 @@ export default function MyTripsScreen() {
       >
         <Tabs
           value={tab}
-          onChange={(_, v) => setTab(v)}
+          onChange={(_, v) => setActiveTab(v)}
           variant="fullWidth"
           sx={{
             minHeight: 40,
