@@ -13,7 +13,7 @@ export interface AppContextValue {
   rides: Ride[];
   isRidesLoading: boolean;
   ridesError: string | null;
-  fetchRides: (signal?: AbortSignal) => Promise<void>;
+  fetchRides: (signal?: AbortSignal, silent?: boolean) => Promise<void>;
   addRide: (ride: Omit<Ride, 'id' | 'createdAt' | 'driverId' | 'driverName' | 'currentPrice'>) => Promise<void> | void;
   updateRide: (rideId: string, payload: Record<string, unknown>) => Promise<void>;
   kickPassenger: (rideId: string, passengerId: string) => Promise<void>;
@@ -123,16 +123,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  // Загрузка списка поездок из API
-  const fetchRides = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    setIsRidesLoading(true);
+  // Загрузка списка поездок из API (параметр silent отключает полноэкранный индикатор загрузки при фоновом поллинге)
+  const fetchRides = useCallback(async (signal?: AbortSignal, silent: boolean = false): Promise<void> => {
+    if (!silent) {
+      setIsRidesLoading(true);
+    }
     setRidesError(null);
     try {
       const response = await api.get<RidesResponse>('/api/rides', { signal });
       if (response && Array.isArray(response.rides)) {
         const mapped = response.rides.map(mapBackendRideToRide);
         setRides(mapped);
-      } else {
+      } else if (!silent) {
         setRides([]);
       }
     } catch (err: unknown) {
@@ -141,9 +143,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const message = err instanceof Error ? err.message : 'Не удалось загрузить поездки';
       setRidesError(message);
-      setRides([]);
+      if (!silent) {
+        setRides([]);
+      }
     } finally {
-      setIsRidesLoading(false);
+      if (!silent) {
+        setIsRidesLoading(false);
+      }
     }
   }, []);
 
@@ -154,6 +160,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return () => {
       controller.abort();
+    };
+  }, [fetchRides]);
+
+  // Фоновый опрос (поллинг) каждые 10 секунд для синхронизации свободных мест и статусов поездок
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      fetchRides(undefined, true);
+    }, 10000);
+
+    return () => {
+      clearInterval(intervalId);
     };
   }, [fetchRides]);
 
