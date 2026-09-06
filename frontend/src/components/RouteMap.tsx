@@ -65,11 +65,15 @@ function calculateMapBounds(coordinates: [number, number][]): {
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
 
+  // Отступы по краям, чтобы маркеры А и Б не обрезались краями карты и нижним оверлеем
+  const lonPadding = Math.max((maxLon - minLon) * 0.15, 0.008);
+  const latPadding = Math.max((maxLat - minLat) * 0.15, 0.008);
+
   return {
     center: [(minLon + maxLon) / 2, (minLat + maxLat) / 2],
     bounds: [
-      [minLon, minLat],
-      [maxLon, maxLat],
+      [minLon - lonPadding, minLat - latPadding * 1.3],
+      [maxLon + lonPadding, maxLat + latPadding],
     ],
   };
 }
@@ -265,7 +269,7 @@ export default function RouteMap({
               try {
                 const bounds = polylineGeo.geometry.getBounds();
                 if (bounds) {
-                  map.setBounds(bounds, { checkZoomRange: true, zoomMargin: 30 });
+                  map.setBounds(bounds, { checkZoomRange: true, zoomMargin: [35, 20, 50, 20] });
                 }
               } catch {
                 // ignore bounds error
@@ -307,8 +311,8 @@ export default function RouteMap({
             mapInstanceRef.current = map;
             setIsMapReady(true);
 
-            // Адаптация карты под реальные размеры контейнера после рендера
-            setTimeout(() => {
+            // Адаптация карты под реальные размеры контейнера после рендера и после завершения CSS-анимаций
+            const adjustViewport = (): void => {
               if (map?.container?.fitToViewport) {
                 try {
                   map.container.fitToViewport();
@@ -316,7 +320,9 @@ export default function RouteMap({
                   // Игнорируем возможные ошибки при быстром размонтировании
                 }
               }
-            }, 150);
+            };
+            setTimeout(adjustViewport, 150);
+            setTimeout(adjustViewport, 350);
           } catch (err) {
             console.warn('Ошибка инициализации ymaps 2.1:', err);
             setIsMapReady(true);

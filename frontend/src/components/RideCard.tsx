@@ -377,8 +377,8 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       </CardContent>
 
       <Collapse in={expanded}>
-        <Box sx={{ p: 2, pt: 0 }}>
-          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+        <Box sx={{ p: { xs: 1.5, sm: 2 }, pt: 0 }}>
+          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: { xs: 1.5, sm: 2 } }}>
             {/* Контейнер интерактивной карты с предотвращением всплытия событий к родительской карточке */}
             <Box
               sx={{ mb: 2, width: '100%' }}
