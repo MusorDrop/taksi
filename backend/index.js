@@ -11,7 +11,10 @@ const PORT = process.env.PORT || 3000;
 // Middlewares
 // Защита HTTP-заголовков с помощью Helmet с разрешением загрузки ресурсов с разных origins
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:5173' }));
+const defaultOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174', 'http://localhost:4173', 'http://127.0.0.1:4173'];
+const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim().replace(/\/+$/, '')).filter(Boolean) : [];
+const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 // Ограничение размера JSON тела запроса во избежание DoS-атак
 app.use(express.json({ limit: '16kb' }));
 
