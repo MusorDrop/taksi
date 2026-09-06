@@ -55,7 +55,7 @@ async function isRideParticipant(db, rideId, userId, driverId) {
         return true;
     }
     const matchRes = await db.query(
-        "SELECT id FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status = 'accepted'",
+        "SELECT id FROM matches WHERE ride_id = $1 AND passenger_id = $2 AND status IN ('accepted', 'completed')",
         [rideId, userId]
     );
     return matchRes.rows.length > 0;
@@ -112,14 +112,20 @@ async function createReview(req, res) {
     try {
         await client.query('BEGIN');
 
-        // Проверка существования поездки и получение driver_id
-        const rideCheck = await client.query('SELECT id, driver_id FROM rides WHERE id = $1', [rideId]);
+        // Проверка существования поездки и получение driver_id и status
+        const rideCheck = await client.query('SELECT id, driver_id, status FROM rides WHERE id = $1', [rideId]);
         if (rideCheck.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Поездка не найдена' });
         }
 
-        const driverId = rideCheck.rows[0].driver_id;
+        const { driver_id: driverId, status: rideStatus } = rideCheck.rows[0];
+
+        // Оставлять отзывы разрешено только после завершения поездки
+        if (rideStatus !== 'completed') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Оставлять отзывы можно только после завершения поездки' });
+        }
 
         // Проверка существования оцениваемого пользователя
         const userCheck = await client.query('SELECT id FROM users WHERE id = $1', [revieweeId]);

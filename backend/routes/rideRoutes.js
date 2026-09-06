@@ -46,6 +46,13 @@ router.patch('/:id', authenticateToken, rideController.updateRide);
 // Удаление / отмена поездки водителем (🟡-8)
 router.delete('/:id', authenticateToken, rideController.deleteRide);
 
+// Старт поездки водителем
+router.post('/:id/start', authenticateToken, rideController.startRide);
+
+// Завершение поездки водителем
+router.post('/:id/finish', authenticateToken, rideController.finishRide);
+router.post('/:id/complete', authenticateToken, rideController.finishRide);
+
 // Исключение пассажира водителем
 router.delete('/:id/passengers/:passengerId', authenticateToken, rideController.kickPassenger);
 

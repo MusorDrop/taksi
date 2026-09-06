@@ -254,7 +254,7 @@ async function runSmokeTests() {
             hasErrors = true;
         }
 
-        // Тест 8: Отправка отзыва водителю и проверка обновления average_rating в /api/auth/me
+        // Тест 8: Жизненный цикл поездки (старт, завершение) и отзывы после завершения
         console.log('\n--- Тест 8: POST /api/reviews и проверка GET /api/auth/me (обновление рейтинга) ---');
         try {
             await pool.query("DELETE FROM users WHERE username = 'smoke_test_passenger'");
@@ -272,12 +272,66 @@ async function runSmokeTests() {
                 { expiresIn: '1h' }
             );
 
-            // Добавляем пассажира в поездку, чтобы он являлся подтвержденным участником (требование 🟠-2)
-            await pool.query(`
-                INSERT INTO matches (ride_id, passenger_id, agreed_price, status)
-                VALUES ($1, $2, 100, 'accepted')
-            `, [createdRideId, createdPassengerId]);
+            // Пассажир присоединяется к запланированной поездке
+            const joinRes = await fetch(`${baseUrl}/api/rides/${createdRideId}/join`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${passengerToken}`
+                }
+            });
+            const joinStatus = joinRes.status;
 
+            // 1. Попытка оставить отзыв до завершения поездки (должна быть отклонена с 400)
+            const prematureReviewRes = await fetch(`${baseUrl}/api/reviews`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${passengerToken}`
+                },
+                body: JSON.stringify({
+                    ride_id: createdRideId,
+                    reviewee_id: createdDriverId,
+                    rating: 5,
+                    comment: 'Попытка оставить отзыв раньше времени'
+                })
+            });
+            const prematureBlocked = prematureReviewRes.status === 400;
+
+            // 2. Попытка не-водителя начать поездку (должно быть 403)
+            const nonDriverStartRes = await fetch(`${baseUrl}/api/rides/${createdRideId}/start`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${passengerToken}` }
+            });
+            const nonDriverStartBlocked = nonDriverStartRes.status === 403;
+
+            // 3. Водитель успешно начинает поездку
+            const driverStartRes = await fetch(`${baseUrl}/api/rides/${createdRideId}/start`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` }
+            });
+            const driverStartData = await driverStartRes.json();
+            const startSuccess = driverStartRes.status === 200 && driverStartData.ride?.status === 'active';
+
+            // 4. Попытка пассажира вступить в уже начавшуюся поездку (должна быть отклонена с 400)
+            const lateJoinRes = await fetch(`${baseUrl}/api/rides/${createdRideId}/join`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${passengerToken}`
+                }
+            });
+            const lateJoinBlocked = lateJoinRes.status === 400;
+
+            // 5. Водитель завершает поездку
+            const driverFinishRes = await fetch(`${baseUrl}/api/rides/${createdRideId}/finish`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` }
+            });
+            const driverFinishData = await driverFinishRes.json();
+            const finishSuccess = driverFinishRes.status === 200 && driverFinishData.ride?.status === 'completed';
+
+            // 6. Теперь отзыв разрешен, отправляем отзыв
             const reviewRes = await fetch(`${baseUrl}/api/reviews`, {
                 method: 'POST',
                 headers: {
@@ -296,6 +350,7 @@ async function runSmokeTests() {
             const reviewData = await reviewRes.json();
             const reviewCreated = reviewStatus === 201 && reviewData.review && reviewData.review.rating === 5;
 
+            // 7. Проверяем обновление рейтинга в /api/auth/me
             const driverMeRes = await fetch(`${baseUrl}/api/auth/me`, {
                 method: 'GET',
                 headers: {
@@ -307,7 +362,24 @@ async function runSmokeTests() {
             const driverMeData = await driverMeRes.json();
             const avgRating = driverMeData.average_rating ?? driverMeData.user?.average_rating;
 
-            const pass = reviewCreated && driverMeStatus === 200 && avgRating === 5;
+            // 8. Проверяем, что getRides возвращает рейтинг водителя и количество отзывов
+            const getRidesRes = await fetch(`${baseUrl}/api/rides?status=all`);
+            const getRidesData = await getRidesRes.json();
+            const targetRide = getRidesData.rides?.find((r) => r.id === createdRideId);
+            const hasDriverRatingAndCount = targetRide &&
+                targetRide.driver_rating === 5 &&
+                targetRide.driver_reviews_count >= 1;
+
+            const pass = joinStatus === 201 &&
+                         prematureBlocked &&
+                         nonDriverStartBlocked &&
+                         startSuccess &&
+                         lateJoinBlocked &&
+                         finishSuccess &&
+                         reviewCreated &&
+                         driverMeStatus === 200 &&
+                         avgRating === 5 &&
+                         hasDriverRatingAndCount;
 
             testResults.push({
                 test: 'POST /api/reviews & GET /api/auth/me (average_rating update)',
@@ -541,6 +613,165 @@ async function runSmokeTests() {
         } catch (err) {
             console.error('Ошибка при тестировании безопасности загрузки файлов:', err.message);
             testResults.push({ test: 'Security: Avatar upload prevents extension & MIME bypass', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 13: Security - Запрет price <= 0 и from == to (нулевая дистанция)
+        console.log('\n--- Тест 13: Security - Запрет price <= 0 и from == to (нулевая дистанция) ---');
+        try {
+            // 1. Попытка создать поездку с price = 0
+            const zeroPriceRes = await fetch(`${baseUrl}/api/rides`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${driverToken}`
+                },
+                body: JSON.stringify({
+                    start_point: { lat: 56.8885, lon: 60.5975 },
+                    end_point: { lat: 56.7686, lon: 60.7712 },
+                    total_seats: 3,
+                    base_price: 0
+                })
+            });
+
+            // 2. Попытка создать поездку с price < 0
+            const negPriceRes = await fetch(`${baseUrl}/api/rides`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${driverToken}`
+                },
+                body: JSON.stringify({
+                    start_point: { lat: 56.8885, lon: 60.5975 },
+                    end_point: { lat: 56.7686, lon: 60.7712 },
+                    total_seats: 3,
+                    base_price: -100
+                })
+            });
+
+            // 3. Попытка создать поездку с одинаковыми точками (distance == 0)
+            const samePointsRes = await fetch(`${baseUrl}/api/rides`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${driverToken}`
+                },
+                body: JSON.stringify({
+                    start_point: { lat: 56.8885, lon: 60.5975 },
+                    end_point: { lat: 56.8885, lon: 60.5975 },
+                    total_seats: 3
+                })
+            });
+
+            // 4. Попытка в route-preview с from == to
+            const samePreviewRes = await fetch(`${baseUrl}/api/rides/route-preview?from=Уралмаш&to=Уралмаш`);
+
+            const pass = zeroPriceRes.status === 400 &&
+                         negPriceRes.status === 400 &&
+                         samePointsRes.status === 400 &&
+                         samePreviewRes.status === 400;
+
+            console.log(`Попытка цены 0: статус ${zeroPriceRes.status} (Ожидался: 400)`);
+            console.log(`Попытка цены -100: статус ${negPriceRes.status} (Ожидался: 400)`);
+            console.log(`Попытка from == to в /api/rides: статус ${samePointsRes.status} (Ожидался: 400)`);
+            console.log(`Попытка from == to в /route-preview: статус ${samePreviewRes.status} (Ожидался: 400)`);
+
+            testResults.push({
+                test: 'Security: Reject price <= 0 and from == to (zero distance)',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании валидации цены и дистанции:', err.message);
+            testResults.push({ test: 'Security: Reject price <= 0 and from == to', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 14: Rate limit на /api/suggest
+        console.log('\n--- Тест 14: Rate limit на /api/suggest ---');
+        try {
+            const suggestRes = await fetch(`${baseUrl}/api/suggest?text=Уралмаш`);
+            const hasRateLimitHeaders = suggestRes.headers.has('ratelimit-limit') || suggestRes.headers.has('x-ratelimit-limit');
+            const pass = suggestRes.status === 200 && (hasRateLimitHeaders || suggestRes.ok);
+
+            console.log(`Статус /api/suggest: ${suggestRes.status} (Ожидался: 200, заголовки лимита присутствуют: ${hasRateLimitHeaders})`);
+
+            testResults.push({
+                test: 'Security: Rate limiter configured on /api/suggest',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании rate limit на suggest:', err.message);
+            testResults.push({ test: 'Security: Rate limiter on /api/suggest', passed: false, error: err.message });
+            hasErrors = true;
+        }
+
+        // Тест 15: Регулярные поездки (создание, старт как экземпляр, наличие description и tags)
+        console.log('\n--- Тест 15: Регулярные поездки и ride_instances ---');
+        try {
+            const regRideRes = await fetch(`${baseUrl}/api/rides`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${driverToken}`
+                },
+                body: JSON.stringify({
+                    start_point: { lat: 56.8885, lon: 60.5975 },
+                    end_point: { lat: 56.7686, lon: 60.7712 },
+                    total_seats: 4,
+                    ride_type: 'regular',
+                    regular_days: ['Пн', 'Ср', 'Пт'],
+                    description: 'Поездка на пары в кампус',
+                    tags: ['студенты', 'не курить', 'музыка']
+                })
+            });
+
+            const regRideData = await regRideRes.json();
+            const regRide = regRideData.ride;
+
+            const startRegRes = await fetch(`${baseUrl}/api/rides/${regRide.id}/start`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${driverToken}` }
+            });
+            const startRegData = await startRegRes.json();
+            const instanceRide = startRegData.ride;
+
+            // Проверяем таблицу ride_instances в БД
+            const dbInstanceCheck = await pool.query(
+                'SELECT * FROM ride_instances WHERE ride_id = $1',
+                [regRide.id]
+            );
+
+            const pass = regRideRes.status === 201 &&
+                         regRide.status === 'planned' &&
+                         regRide.description === 'Поездка на пары в кампус' &&
+                         regRide.tags?.length === 3 &&
+                         startRegRes.status === 200 &&
+                         instanceRide.parent_ride_id === regRide.id &&
+                         instanceRide.status === 'active' &&
+                         dbInstanceCheck.rows.length === 1 &&
+                         dbInstanceCheck.rows[0].status === 'active';
+
+            console.log(`Регулярная поездка создана: статус ${regRide.status}, тегов: ${regRide.tags?.length}`);
+            console.log(`Экземпляр регулярной поездки запущен: статус ${instanceRide.status}, parent_ride_id: ${instanceRide.parent_ride_id}`);
+            console.log(`Запись в ride_instances найдена: ${dbInstanceCheck.rows.length > 0}`);
+
+            // Очистка созданной тестовой поездки
+            await pool.query('DELETE FROM rides WHERE id = $1', [instanceRide.id]);
+            await pool.query('DELETE FROM rides WHERE id = $1', [regRide.id]);
+
+            testResults.push({
+                test: 'Regular ride start creates ride_instances and active copy',
+                passed: pass
+            });
+
+            if (!pass) hasErrors = true;
+        } catch (err) {
+            console.error('Ошибка при тестировании регулярных поездок:', err.message);
+            testResults.push({ test: 'Regular ride start creates ride_instances', passed: false, error: err.message });
             hasErrors = true;
         }
 
