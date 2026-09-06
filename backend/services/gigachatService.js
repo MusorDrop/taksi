@@ -10,9 +10,74 @@ const DEFAULT_SCOPE = 'GIGACHAT_API_PERS';
 const DEFAULT_MODEL = 'GigaChat';
 const REQUEST_TIMEOUT_MS = 25000;
 
+// Допустимый список тегов поездки (строго синхронизирован с AVAILABLE_TAGS на фронтенде)
+const AVAILABLE_TAGS = [
+    'С музыкой',
+    'Еду молча',
+    'Люблю поболтать',
+    'Можно с багажом',
+    'Пустой багажник',
+    'Не курить',
+    'Чистый салон',
+    'Аккуратно вожу',
+    'Можно с кофе/едой',
+    'Без остановок',
+    'Тишина',
+    'Можно с животными'
+];
+
+/**
+ * Системный промпт для GigaChat со строгими правилами обработки тегов, даты и времени
+ */
+const SYSTEM_PROMPT = [
+    'Ты — интеллектуальный ассистент студенческого сервиса совместных поездок (райдшеринга) в городе Екатеринбурге.',
+    'Твоя задача — извлечь параметры поездки из неструктурированного текста пользователя и вернуть СТРОГО валидный JSON-объект без markdown-разметки и без поясняющих фраз.',
+    'Схема ответа:',
+    '{',
+    '  "role": "driver" | "passenger", // "driver" если человек предлагает подвезти, едет на своем авто, есть свободные места; "passenger" если человек ищет поездку, спрашивает кто подвезет или просит забрать',
+    '  "from": string, // Точный пункт отправления (улица, дом, микрорайон, корпус УрФУ, ориентир или метро)',
+    '  "to": string, // Точный пункт назначения',
+    '  "date": string | null, // Дата поездки в формате YYYY-MM-DD (или словом "сегодня", если дата не указана явно). Слово "утром", "днем", "вечером" НЕ ДОЛЖНО попадать в date!',
+    '  "time": string | null, // Время отправления в формате HH:mm. Если пользователь пишет "утром", "днем", "вечером", это должно записываться в time (например, "08:00", "14:00", "19:00")',
+    '  "price": number | null, // Стоимость поездки в рублях за одно пассажирское место (только число)',
+    '  "seats": number | null, // Число свободных мест для водителя либо нужных мест для пассажира (по умолчанию 3 для водителя, 1 для пассажира)',
+    '  "comment": string | null, // Пожелания, уточнения, детали посадки или багажа',
+    '  "tags": string[] // Массив тегов поездки. Должны БУКВАЛЬНО совпадать со строками из строгого списка ниже!',
+    '}',
+    '',
+    'СТРОГИЕ ПРАВИЛА ОБРАБОТКИ ВРЕМЕНИ И ДАТЫ:',
+    '1. Если пользователь пишет "утром", "днем", "вечером", это ОБЯЗАТЕЛЬНО должно записываться в "time":',
+    '   - "утром" -> "08:00"',
+    '   - "днем" -> "14:00"',
+    '   - "вечером" -> "19:00"',
+    '2. Поле "date" должно быть датой в формате YYYY-MM-DD (или словом "сегодня", если дата не указана). Слово "утром", "днем" или "вечером" категорически ЗАПРЕЩЕНО помещать в "date".',
+    '',
+    'СТРОГИЙ СПИСОК РАЗРЕШЕННЫХ ТЕГОВ (tags):',
+    'В массив "tags" разрешено возвращать ИСКЛЮЧИТЕЛЬНО строки из следующего фиксированного списка (точное соответствие AVAILABLE_TAGS с фронтенда):',
+    '  - "С музыкой"',
+    '  - "Еду молча"',
+    '  - "Люблю поболтать"',
+    '  - "Можно с багажом"',
+    '  - "Пустой багажник"',
+    '  - "Не курить"',
+    '  - "Чистый салон"',
+    '  - "Аккуратно вожу"',
+    '  - "Можно с кофе/едой"',
+    '  - "Без остановок"',
+    '  - "Тишина"',
+    '  - "Можно с животными"',
+    '',
+    'ВАЖНО: Теги в ответе должны БУКВАЛЬНО совпадать с этими строками (включая регистр и пробелы), иначе фронтенд их не отрендерит.',
+    'Сопоставляй формулировки пользователя со строгим списком: например, "чистый салон", "чтобы Чистый салон" -> "Чистый салон"; "без музыки", "в тишине" -> "Тишина"; "без сигарет", "не курить" -> "Не курить"; "поболтать" -> "Люблю поболтать".',
+    'Если подходящих тегов нет, возвращай пустой массив [].',
+    '',
+    'Если какое-то поле невозможно определить из текста, укажи null (для tags пустой массив []). Город поездки по умолчанию — Екатеринбург.'
+].join('\n');
+
 // Переменные для кэширования access_token в памяти
 let cachedAccessToken = null;
 let tokenExpiresAt = 0;
+let tokenPromise = null;
 let httpsAgentInstance = null;
 
 /**
@@ -111,24 +176,13 @@ function sendHttpsRequest(targetUrl, options, requestBody = null) {
 }
 
 /**
- * Получение валидного access_token GigaChat с автоматическим кэшированием в памяти
- * @returns {Promise<string>} Токен доступа Bearer
+ * Выполнение сетевого запроса к OAuth-эндпоинту GigaChat для получения нового токена
+ * @param {string} clientId Идентификатор клиента
+ * @param {string} clientSecret Секретный ключ клиента
+ * @param {string} scope Область доступа
+ * @returns {Promise<{ accessToken: string, expiresAt: number }>}
  */
-async function getAccessToken() {
-    const clientId = process.env.GIGACHAT_CLIENT_ID;
-    const clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
-    const scope = process.env.GIGACHAT_SCOPE || DEFAULT_SCOPE;
-
-    if (!clientId || !clientSecret) {
-        throw new Error('Не заданы переменные окружения GIGACHAT_CLIENT_ID или GIGACHAT_CLIENT_SECRET в .env');
-    }
-
-    // Проверяем актуальность кэшированного токена (с запасом 60 секунд до истечения)
-    const nowTimestamp = Date.now();
-    if (cachedAccessToken && nowTimestamp < tokenExpiresAt - 60000) {
-        return cachedAccessToken;
-    }
-
+async function requestNewAccessToken(clientId, clientSecret, scope) {
     const credentialsBase64 = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
     const requestId = crypto.randomUUID();
     const postData = `scope=${encodeURIComponent(scope)}`;
@@ -163,10 +217,49 @@ async function getAccessToken() {
         throw new Error('Ответ авторизации GigaChat не содержит access_token');
     }
 
-    cachedAccessToken = authPayload.access_token;
-    tokenExpiresAt = authPayload.expires_at || (nowTimestamp + 25 * 60 * 1000);
+    const expiresAt = authPayload.expires_at || (Date.now() + 25 * 60 * 1000);
+    return {
+        accessToken: authPayload.access_token,
+        expiresAt
+    };
+}
 
-    return cachedAccessToken;
+/**
+ * Получение валидного access_token GigaChat с автоматическим кэшированием в памяти
+ * @returns {Promise<string>} Токен доступа Bearer
+ */
+async function getAccessToken() {
+    const clientId = process.env.GIGACHAT_CLIENT_ID;
+    const clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
+    const scope = process.env.GIGACHAT_SCOPE || DEFAULT_SCOPE;
+
+    if (!clientId || !clientSecret) {
+        throw new Error('Не заданы переменные окружения GIGACHAT_CLIENT_ID или GIGACHAT_CLIENT_SECRET в .env');
+    }
+
+    // Проверяем актуальность кэшированного токена (с запасом 60 секунд до истечения)
+    const nowTimestamp = Date.now();
+    if (cachedAccessToken && nowTimestamp < tokenExpiresAt - 60000) {
+        return cachedAccessToken;
+    }
+
+    // Кэшируем Promise для предотвращения параллельных повторных запросов (thundering herd race condition)
+    if (tokenPromise) {
+        return tokenPromise;
+    }
+
+    tokenPromise = (async () => {
+        try {
+            const authResult = await requestNewAccessToken(clientId, clientSecret, scope);
+            cachedAccessToken = authResult.accessToken;
+            tokenExpiresAt = authResult.expiresAt;
+            return cachedAccessToken;
+        } finally {
+            tokenPromise = null;
+        }
+    })();
+
+    return tokenPromise;
 }
 
 /**
@@ -220,6 +313,11 @@ function resolveDateString(dateStr) {
         return now.toISOString().split('T')[0];
     }
 
+    // Если в дату ошибочно попало время суток, возвращаем сегодняшнюю дату
+    if (lower.includes('утр') || lower.includes('дн') || lower.includes('вечер') || lower.includes('ноч')) {
+        return now.toISOString().split('T')[0];
+    }
+
     return dateStr;
 }
 
@@ -232,19 +330,43 @@ function resolveTimeString(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') {
         return null;
     }
-    const match = timeStr.trim().match(/(\d{1,2})[:.](\d{2})/);
+    const trimmed = timeStr.trim();
+    const match = trimmed.match(/(\d{1,2})[:.](\d{2})/);
     if (match) {
         const hours = match[1].padStart(2, '0');
         const mins = match[2];
         return `${hours}:${mins}`;
     }
-    return timeStr.trim();
+
+    const singleHourMatch = trimmed.match(/^(\d{1,2})(?:\s*(?:ч|час|часов|утра|вечера|дня))?$/i);
+    if (singleHourMatch) {
+        const h = parseInt(singleHourMatch[1], 10);
+        if (h >= 0 && h <= 23) {
+            return `${String(h).padStart(2, '0')}:00`;
+        }
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (lower.includes('утр')) {
+        return '08:00';
+    }
+    if (lower.includes('дн') || lower.includes('обед')) {
+        return '14:00';
+    }
+    if (lower.includes('вечер')) {
+        return '19:00';
+    }
+    if (lower.includes('ноч')) {
+        return '23:00';
+    }
+
+    return trimmed;
 }
 
 /**
  * Извлечение характерных тегов поездки по ключевым словам
  * @param {string} sourceText - Текст описания или комментария
- * @returns {string[]} Список выявленных тегов
+ * @returns {string[]} Список выявленных тегов, строго соответствующих AVAILABLE_TAGS
  */
 function extractKeywordTags(sourceText) {
     if (!sourceText || typeof sourceText !== 'string') {
@@ -253,26 +375,136 @@ function extractKeywordTags(sourceText) {
     const lower = sourceText.toLowerCase();
     const tags = [];
 
-    if (lower.includes('не кур') || lower.includes('без кур') || lower.includes('курить нельзя')) {
+    if (lower.includes('не кур') || lower.includes('без кур') || lower.includes('курить нельзя') || lower.includes('без сигарет')) {
         tags.push('Не курить');
     }
-    if (lower.includes('багаж') || lower.includes('чемодан') || lower.includes('сумк')) {
-        tags.push('Багаж');
+    if (lower.includes('пустой багажник')) {
+        tags.push('Пустой багажник');
+    } else if (lower.includes('багаж') || lower.includes('чемодан') || lower.includes('сумк')) {
+        tags.push('Можно с багажом');
     }
     if (lower.includes('музык')) {
         tags.push('С музыкой');
     }
-    if (lower.includes('животн') || lower.includes('собак') || lower.includes('кошк')) {
+    if (lower.includes('тишин') || lower.includes('без музыки') || lower.includes('в тишине')) {
+        tags.push('Тишина');
+    }
+    if (lower.includes('чистый салон') || lower.includes('чисто в салон') || lower.includes('чистая машин') || lower.includes('чистый авто')) {
+        tags.push('Чистый салон');
+    }
+    if (lower.includes('молч') || lower.includes('еду молча') || lower.includes('не разговар')) {
+        tags.push('Еду молча');
+    }
+    if (lower.includes('поболтать') || lower.includes('поговорить') || lower.includes('общительн')) {
+        tags.push('Люблю поболтать');
+    }
+    if (lower.includes('аккуратн')) {
+        tags.push('Аккуратно вожу');
+    }
+    if (lower.includes('кофе') || lower.includes('едой') || lower.includes('перекус')) {
+        tags.push('Можно с кофе/едой');
+    }
+    if (lower.includes('без остановок') || lower.includes('без пересадок')) {
+        tags.push('Без остановок');
+    }
+    if (lower.includes('животн') || lower.includes('собак') || lower.includes('кошк') || lower.includes('питомц')) {
         tags.push('Можно с животными');
-    }
-    if (lower.includes('студент')) {
-        tags.push('Только студенты');
-    }
-    if (lower.includes('детск') || lower.includes('бустер')) {
-        tags.push('Детское кресло');
     }
 
     return tags;
+}
+
+/**
+ * Нормализация значений даты и времени поездки
+ * @param {string|null} rawDate - Сырая строка даты от модели
+ * @param {string|null} rawTime - Сырая строка времени от модели
+ * @param {string} originalText - Исходный текст запроса пользователя
+ * @returns {{ date: string|null, time: string|null }} Нормализованные дата и время
+ */
+function normalizeDateTime(rawDate, rawTime, originalText) {
+    let extractedDate = rawDate;
+    let extractedTime = rawTime;
+
+    // Если время суток ошибочно записано в поле date, переносим его в time
+    if (extractedDate) {
+        const lowerDate = extractedDate.toLowerCase();
+        if (lowerDate.includes('утр')) {
+            if (!extractedTime) extractedTime = '08:00';
+            extractedDate = 'сегодня';
+        } else if (lowerDate.includes('дн') || lowerDate.includes('обед')) {
+            if (!extractedTime) extractedTime = '14:00';
+            extractedDate = 'сегодня';
+        } else if (lowerDate.includes('вечер')) {
+            if (!extractedTime) extractedTime = '19:00';
+            extractedDate = 'сегодня';
+        } else if (lowerDate.includes('ноч')) {
+            if (!extractedTime) extractedTime = '23:00';
+            extractedDate = 'сегодня';
+        }
+    }
+
+    // Если время не указано в ответе модели, но упомянуто в исходном тексте
+    if (!extractedTime && originalText) {
+        const lowerText = originalText.toLowerCase();
+        if (lowerText.includes('утр')) {
+            extractedTime = '08:00';
+        } else if (lowerText.includes('днем') || lowerText.includes('в обед')) {
+            extractedTime = '14:00';
+        } else if (lowerText.includes('вечер')) {
+            extractedTime = '19:00';
+        } else if (lowerText.includes('ночью')) {
+            extractedTime = '23:00';
+        }
+    }
+
+    // Если дата не была указана, но есть время или текст запроса
+    if (!extractedDate && (extractedTime || originalText)) {
+        extractedDate = 'сегодня';
+    }
+
+    return {
+        date: resolveDateString(extractedDate),
+        time: resolveTimeString(extractedTime)
+    };
+}
+
+/**
+ * Нормализация и валидация тегов поездки по строгому списку AVAILABLE_TAGS
+ * @param {unknown} rawTags - Массив тегов из ответа модели
+ * @param {string|null} comment - Текст комментария
+ * @param {string} originalText - Исходный текст запроса пользователя
+ * @returns {string[]} Список проверенных тегов
+ */
+function normalizeTags(rawTags, comment, originalText) {
+    const list = Array.isArray(rawTags) ? rawTags : [];
+    const normalized = [];
+
+    for (const rawTag of list) {
+        if (typeof rawTag !== 'string') {
+            continue;
+        }
+        const trimmed = rawTag.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const matched = AVAILABLE_TAGS.find(
+            (item) => item.toLowerCase() === trimmed.toLowerCase()
+        );
+        if (matched && !normalized.includes(matched)) {
+            normalized.push(matched);
+        }
+    }
+
+    // Дополняем ключевыми тегами из текста комментария и запроса
+    const combinedText = `${comment || ''} ${originalText}`;
+    const keywordTags = extractKeywordTags(combinedText);
+    for (const kwTag of keywordTags) {
+        if (!normalized.includes(kwTag)) {
+            normalized.push(kwTag);
+        }
+    }
+
+    return normalized;
 }
 
 /**
@@ -301,12 +533,11 @@ function normalizeExtractedRideData(rawObject, originalText = '') {
     const rawDate = typeof rawObject?.date === 'string' && rawObject.date.trim().length > 0
         ? rawObject.date.trim()
         : null;
-    const date = resolveDateString(rawDate);
-
     const rawTime = typeof rawObject?.time === 'string' && rawObject.time.trim().length > 0
         ? rawObject.time.trim()
         : null;
-    const time = resolveTimeString(rawTime);
+
+    const { date, time } = normalizeDateTime(rawDate, rawTime, originalText);
 
     const parsedPrice = Number(rawObject?.price);
     const price = !isNaN(parsedPrice) && parsedPrice >= 0 ? Math.round(parsedPrice) : null;
@@ -318,14 +549,7 @@ function normalizeExtractedRideData(rawObject, originalText = '') {
         ? rawObject.comment.trim()
         : null;
 
-    let tags = Array.isArray(rawObject?.tags)
-        ? rawObject.tags.map((tag) => String(tag).trim()).filter((tag) => tag.length > 0)
-        : [];
-
-    if (tags.length === 0) {
-        const combinedText = `${comment || ''} ${originalText}`;
-        tags = extractKeywordTags(combinedText);
-    }
+    const tags = normalizeTags(rawObject?.tags, comment, originalText);
 
     return {
         role,
@@ -362,30 +586,12 @@ async function parseRideRequest(text) {
 
     const token = await getAccessToken();
 
-    const systemPrompt = [
-        'Ты — интеллектуальный ассистент студенческого сервиса совместных поездок (райдшеринга) в городе Екатеринбурге.',
-        'Твоя задача — извлечь параметры поездки из неструктурированного текста пользователя и вернуть СТРОГО валидный JSON-объект без markdown-разметки и без поясняющих фраз.',
-        'Схема ответа:',
-        '{',
-        '  "role": "driver" | "passenger", // "driver" если человек предлагает подвезти, едет на своем авто, есть свободные места; "passenger" если человек ищет поездку, спрашивает кто подвезет или просит забрать',
-        '  "from": string, // Точный пункт отправления (улица, дом, микрорайон, корпус УрФУ, ориентир или метро)',
-        '  "to": string, // Точный пункт назначения',
-        '  "date": string | null, // Дата поездки в формате YYYY-MM-DD (если указано "сегодня", "завтра" и т.п., вычисли относительно текущей даты) или текстовое описание',
-        '  "time": string | null, // Время отправления в формате HH:mm (например, "18:00") или интервал',
-        '  "price": number | null, // Стоимость поездки в рублях за одно пассажирское место (только число)',
-        '  "seats": number | null, // Число свободных мест для водителя либо нужных мест для пассажира (по умолчанию 3 для водителя, 1 для пассажира)',
-        '  "comment": string | null, // Пожелания, уточнения, детали посадки или багажа',
-        '  "tags": string[] // Список ключевых тегов (например: ["не курим", "с багажом", "быстро", "только студенты"])',
-        '}',
-        'Если какое-то поле невозможно определить из текста, укажи null (для tags пустой массив []). Город поездки по умолчанию — Екатеринбург.'
-    ].join('\n');
-
     const requestPayload = {
         model: DEFAULT_MODEL,
         messages: [
             {
                 role: 'system',
-                content: systemPrompt
+                content: SYSTEM_PROMPT
             },
             {
                 role: 'user',
@@ -442,5 +648,7 @@ async function parseRideRequest(text) {
 module.exports = {
     getAccessToken,
     parseRideRequest,
-    getHttpsAgent
+    getHttpsAgent,
+    AVAILABLE_TAGS,
+    SYSTEM_PROMPT
 };

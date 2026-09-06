@@ -352,24 +352,9 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
               onChange={(e) => setInputKey(e.target.value)}
               helperText={`${inputKey.trim().length} / 30 символов`}
               error={inputKey.length > 0 && inputKey.trim().length !== 30}
-              sx={{ mb: 1.5 }}
+              sx={{ mb: 2 }}
               autoFocus
             />
-
-            <Stack direction="row" justifyContent="center" sx={{ mb: 2 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  const defaultKey = 'poputka_admin_secret_key_30chr';
-                  setInputKey(defaultKey);
-                  setAuthError(null);
-                }}
-                sx={{ textTransform: 'none', fontSize: '0.8rem' }}
-              >
-                Подставить ключ по умолчанию
-              </Button>
-            </Stack>
 
             <Button
               fullWidth
