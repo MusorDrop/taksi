@@ -209,8 +209,14 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       }
 
       // Если распознаны теги особенностей поездки
-      if (Array.isArray(response.tags) && response.tags.length > 0) {
-        setFilterTags((prev) => Array.from(new Set([...prev, ...response.tags!])));
+      const parsedTags = Array.isArray(response.tags) && response.tags.length > 0
+        ? response.tags
+        : Array.isArray(response.parsed?.tags) && response.parsed.tags.length > 0
+        ? response.parsed.tags
+        : [];
+
+      if (parsedTags.length > 0) {
+        setFilterTags((prev) => Array.from(new Set([...prev, ...parsedTags])));
       }
 
       // Автоматический вызов поиска поездок
@@ -253,6 +259,16 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
     setFilterTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
+    if (aiParsedResult?.tags && aiParsedResult.tags.includes(tag)) {
+      setAiParsedResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              tags: prev.tags?.filter((t) => t !== tag) ?? [],
+            }
+          : null
+      );
+    }
   };
 
   const handleResetFilters = (): void => {
@@ -418,7 +434,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       )}
 
       {/* Активные фильтры маршрута и времени */}
-      {(Boolean(filters.from) || Boolean(filters.to) || Boolean(filters.date) || Boolean(filters.time)) && (
+      {(Boolean(filters.from) || Boolean(filters.to) || Boolean(filters.date) || Boolean(filters.time) || filterTags.length > 0) && (
         <Paper
           variant="outlined"
           sx={{
@@ -436,7 +452,11 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             </Typography>
             <Button
               size="small"
-              onClick={() => setFilters({ from: '', to: '', date: '', time: '' })}
+              onClick={() => {
+                setFilters({ from: '', to: '', date: '', time: '' });
+                setFilterTags([]);
+                setAiParsedResult(null);
+              }}
               sx={{ fontSize: '0.75rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
             >
               Сбросить
@@ -479,6 +499,16 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
                 variant="outlined"
               />
             )}
+            {filterTags.map((tag) => (
+              <Chip
+                key={tag}
+                size="small"
+                label={tag}
+                onDelete={() => handleToggleTag(tag)}
+                color="primary"
+                variant="outlined"
+              />
+            ))}
           </Box>
         </Paper>
       )}
