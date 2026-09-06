@@ -13,6 +13,7 @@ const REQUEST_TIMEOUT_MS = 25000;
 // Переменные для кэширования access_token в памяти
 let cachedAccessToken = null;
 let tokenExpiresAt = 0;
+let tokenPromise = null;
 let httpsAgentInstance = null;
 
 /**
@@ -111,24 +112,13 @@ function sendHttpsRequest(targetUrl, options, requestBody = null) {
 }
 
 /**
- * Получение валидного access_token GigaChat с автоматическим кэшированием в памяти
- * @returns {Promise<string>} Токен доступа Bearer
+ * Выполнение сетевого запроса к OAuth-эндпоинту GigaChat для получения нового токена
+ * @param {string} clientId Идентификатор клиента
+ * @param {string} clientSecret Секретный ключ клиента
+ * @param {string} scope Область доступа
+ * @returns {Promise<{ accessToken: string, expiresAt: number }>}
  */
-async function getAccessToken() {
-    const clientId = process.env.GIGACHAT_CLIENT_ID;
-    const clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
-    const scope = process.env.GIGACHAT_SCOPE || DEFAULT_SCOPE;
-
-    if (!clientId || !clientSecret) {
-        throw new Error('Не заданы переменные окружения GIGACHAT_CLIENT_ID или GIGACHAT_CLIENT_SECRET в .env');
-    }
-
-    // Проверяем актуальность кэшированного токена (с запасом 60 секунд до истечения)
-    const nowTimestamp = Date.now();
-    if (cachedAccessToken && nowTimestamp < tokenExpiresAt - 60000) {
-        return cachedAccessToken;
-    }
-
+async function requestNewAccessToken(clientId, clientSecret, scope) {
     const credentialsBase64 = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
     const requestId = crypto.randomUUID();
     const postData = `scope=${encodeURIComponent(scope)}`;
@@ -163,10 +153,49 @@ async function getAccessToken() {
         throw new Error('Ответ авторизации GigaChat не содержит access_token');
     }
 
-    cachedAccessToken = authPayload.access_token;
-    tokenExpiresAt = authPayload.expires_at || (nowTimestamp + 25 * 60 * 1000);
+    const expiresAt = authPayload.expires_at || (Date.now() + 25 * 60 * 1000);
+    return {
+        accessToken: authPayload.access_token,
+        expiresAt
+    };
+}
 
-    return cachedAccessToken;
+/**
+ * Получение валидного access_token GigaChat с автоматическим кэшированием в памяти
+ * @returns {Promise<string>} Токен доступа Bearer
+ */
+async function getAccessToken() {
+    const clientId = process.env.GIGACHAT_CLIENT_ID;
+    const clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
+    const scope = process.env.GIGACHAT_SCOPE || DEFAULT_SCOPE;
+
+    if (!clientId || !clientSecret) {
+        throw new Error('Не заданы переменные окружения GIGACHAT_CLIENT_ID или GIGACHAT_CLIENT_SECRET в .env');
+    }
+
+    // Проверяем актуальность кэшированного токена (с запасом 60 секунд до истечения)
+    const nowTimestamp = Date.now();
+    if (cachedAccessToken && nowTimestamp < tokenExpiresAt - 60000) {
+        return cachedAccessToken;
+    }
+
+    // Кэшируем Promise для предотвращения параллельных повторных запросов (thundering herd race condition)
+    if (tokenPromise) {
+        return tokenPromise;
+    }
+
+    tokenPromise = (async () => {
+        try {
+            const authResult = await requestNewAccessToken(clientId, clientSecret, scope);
+            cachedAccessToken = authResult.accessToken;
+            tokenExpiresAt = authResult.expiresAt;
+            return cachedAccessToken;
+        } finally {
+            tokenPromise = null;
+        }
+    })();
+
+    return tokenPromise;
 }
 
 /**

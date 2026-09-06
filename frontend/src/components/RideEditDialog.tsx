@@ -255,6 +255,7 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
     durationMin,
     startCoords,
     endCoords,
+    isRouteLoading,
     setInitialRoute,
   } = useRoutePreview(fromSuggest.value, toSuggest.value, time, {
     enabled: open,
@@ -274,6 +275,7 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
       setToValue(ride.to || '');
       setToInputValue(ride.to || '');
       setToOptions([]);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTime(ride.time || '');
       setPrice(String(ride.price ?? ''));
       setSeats(String(ride.totalSeats || 4));
@@ -342,11 +344,11 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
         distance_km: distanceKm ?? ride.distanceKm,
         distanceKm: distanceKm ?? ride.distanceKm,
       });
+      setIsSubmitting(false);
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Не удалось обновить маршрут';
       setError(message);
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -512,7 +514,7 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
           <Button
             type="submit"
             variant="contained"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isRouteLoading}
             startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
             sx={{
               fontWeight: 700,
