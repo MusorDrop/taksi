@@ -4,8 +4,8 @@ const adminMiddleware = require('../middleware/adminMiddleware');
 
 const router = express.Router();
 
-// Регулярное выражение для валидации UUID
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Регулярное выражение для валидации UUID из единого модуля валидации (🟡-1)
+const { UUID_REGEX } = require('../utils/validation');
 
 // Защита всех эндпоинтов администратора
 router.use(adminMiddleware);
@@ -25,16 +25,24 @@ const ALLOWED_RIDE_STATUSES = ['planned', 'active', 'completed', 'cancelled', 's
 
 // --- ПОЛЬЗОВАТЕЛИ (USERS) ---
 
-// Получение списка всех пользователей
+// Получение списка всех пользователей с поддержкой пагинации (🟡-5)
 router.get('/users', async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const offset = (page - 1) * limit;
+
     try {
         const query = `
-            SELECT id, username, first_name, last_name, phone, role, rating, is_verified, is_blocked, avatar_url, created_at
+            SELECT id, username, first_name, last_name, phone, role, rating, is_verified, is_blocked, avatar_url, created_at,
+                   COUNT(*) OVER() AS full_count
             FROM users
             ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2
         `;
-        const result = await pool.query(query);
-        res.json({ count: result.rows.length, users: result.rows });
+        const result = await pool.query(query, [limit, offset]);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
+        const users = result.rows.map(({ full_count, ...userData }) => userData);
+        res.json({ count: users.length, total_count: totalCount, page, limit, users });
     } catch (err) {
         console.error('Ошибка admin /users:', err);
         res.status(500).json({ error: 'Ошибка базы данных при получении пользователей' });
@@ -131,8 +139,12 @@ router.delete('/users/:id', async (req, res) => {
 
 // --- ПОЕЗДКИ (RIDES) ---
 
-// Получение списка всех поездок
+// Получение списка всех поездок с поддержкой пагинации (🟡-5)
 router.get('/rides', async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const offset = (page - 1) * limit;
+
     try {
         const query = `
             SELECT
@@ -152,23 +164,52 @@ router.get('/rides', async (req, res) => {
                 r.available_seats,
                 r.status,
                 r.base_price,
-                r.created_at
+                r.created_at,
+                COUNT(*) OVER() AS full_count
             FROM rides r
             LEFT JOIN users u ON r.driver_id = u.id
             ORDER BY r.created_at DESC
+            LIMIT $1 OFFSET $2
         `;
-        const result = await pool.query(query);
-        res.json({ count: result.rows.length, rides: result.rows });
+        const result = await pool.query(query, [limit, offset]);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
+        const rides = result.rows.map(({ full_count, ...rideData }) => rideData);
+        res.json({ count: rides.length, total_count: totalCount, page, limit, rides });
     } catch (err) {
         console.error('Ошибка admin /rides:', err);
         res.status(500).json({ error: 'Ошибка базы данных при получении поездок' });
     }
 });
 
-// Получение информации о поездке по ID
+// Получение информации о поездке по ID с явным перечнем колонок и координат (🟡-7)
 router.get('/rides/:id', async (req, res) => {
     try {
-        const query = 'SELECT * FROM rides WHERE id = $1';
+        const query = `
+            SELECT
+                id,
+                driver_id,
+                vehicle_id,
+                parent_ride_id,
+                departure_time,
+                ST_X(start_point) AS start_lon,
+                ST_Y(start_point) AS start_lat,
+                ST_X(end_point) AS end_lon,
+                ST_Y(end_point) AS end_lat,
+                total_seats,
+                available_seats,
+                status,
+                base_price,
+                ride_type,
+                regular_days,
+                distance_meters,
+                duration_seconds,
+                route_polyline,
+                description,
+                tags,
+                created_at
+            FROM rides
+            WHERE id = $1
+        `;
         const result = await pool.query(query, [req.params.id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Поездка не найдена' });
         res.json({ ride: result.rows[0] });
@@ -201,7 +242,33 @@ router.patch('/rides/:id', async (req, res) => {
         return res.status(400).json({ error: 'Общее количество мест должно быть положительным числом' });
     }
 
+    // Валидация формата времени отправления (🔵-6)
+    if (departure_time !== undefined && departure_time !== null) {
+        const parsedTime = new Date(departure_time);
+        if (isNaN(parsedTime.getTime())) {
+            return res.status(400).json({ error: 'Некорректный формат даты отправления (departure_time)' });
+        }
+    }
+
     try {
+        // Перекрестная проверка available_seats <= total_seats (🟠-1)
+        const currentRes = await pool.query('SELECT available_seats, total_seats FROM rides WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) return res.status(404).json({ error: 'Поездка не найдена' });
+        const currentRide = currentRes.rows[0];
+
+        const targetAvailable = available_seats !== undefined && available_seats !== null
+            ? Number(available_seats)
+            : currentRide.available_seats;
+        const targetTotal = total_seats !== undefined && total_seats !== null
+            ? Number(total_seats)
+            : currentRide.total_seats;
+
+        if (targetAvailable > targetTotal) {
+            return res.status(400).json({
+                error: 'Количество свободных мест не может превышать общее количество мест'
+            });
+        }
+
         const query = `
             UPDATE rides
             SET status = COALESCE($1, status),
@@ -243,8 +310,12 @@ router.delete('/rides/:id', async (req, res) => {
 
 // --- МАШИНЫ (VEHICLES) ---
 
-// Получение списка всех автомобилей
+// Получение списка всех автомобилей с поддержкой пагинации (🟡-5, 🟡-8)
 router.get('/vehicles', async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const offset = (page - 1) * limit;
+
     try {
         const query = `
             SELECT
@@ -255,23 +326,33 @@ router.get('/vehicles', async (req, res) => {
                 v.brand,
                 v.color,
                 v.license_plate,
-                v.created_at
+                v.seats,
+                v.created_at,
+                COUNT(*) OVER() AS full_count
             FROM vehicles v
             LEFT JOIN users u ON v.driver_id = u.id
             ORDER BY v.created_at DESC
+            LIMIT $1 OFFSET $2
         `;
-        const result = await pool.query(query);
-        res.json({ count: result.rows.length, vehicles: result.rows });
+        const result = await pool.query(query, [limit, offset]);
+        const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
+        const vehicles = result.rows.map(({ full_count, ...vData }) => vData);
+        res.json({ count: vehicles.length, total_count: totalCount, page, limit, vehicles });
     } catch (err) {
         console.error('Ошибка admin /vehicles:', err);
         res.status(500).json({ error: 'Ошибка базы данных при получении автомобилей' });
     }
 });
 
-// Получение автомобиля по ID
+// Получение автомобиля по ID с явным перечнем колонок (🟡-7)
 router.get('/vehicles/:id', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM vehicles WHERE id = $1', [req.params.id]);
+        const query = `
+            SELECT id, driver_id, brand, color, license_plate, seats, created_at
+            FROM vehicles
+            WHERE id = $1
+        `;
+        const result = await pool.query(query, [req.params.id]);
         if (result.rows.length === 0) return res.status(404).json({ error: 'Автомобиль не найден' });
         res.json({ vehicle: result.rows[0] });
     } catch (err) {

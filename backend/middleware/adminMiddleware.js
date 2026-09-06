@@ -110,12 +110,13 @@ function isTrustedOrigin(req) {
     const requestOrigin = extractRequestOrigin(req);
     const host = req.headers.host;
     const allowedOrigins = getAllowedOrigins();
+    const isDevOrTest = process.env.NODE_ENV !== 'production';
 
     if (requestOrigin) {
         if (allowedOrigins.includes(requestOrigin)) {
             return true;
         }
-        if (LOCAL_ORIGIN_REGEX.test(requestOrigin)) {
+        if (isDevOrTest && LOCAL_ORIGIN_REGEX.test(requestOrigin)) {
             return true;
         }
         return false;
@@ -127,7 +128,7 @@ function isTrustedOrigin(req) {
     }
 
     const hostLower = host.toLowerCase().trim();
-    if (LOCAL_HOST_REGEX.test(hostLower)) {
+    if (isDevOrTest && LOCAL_HOST_REGEX.test(hostLower)) {
         return true;
     }
 
@@ -145,7 +146,7 @@ function isTrustedOrigin(req) {
 
 /**
  * Валидация секретного ключа администратора в заголовке X-Admin-Key.
- * Устранены атака по времени (Timing Attack) и жестко закодированный ключ по умолчанию.
+ * Устранены атака по времени (Timing Attack) и утечка информации о длине ключа (🟠-2).
  * @param {string | undefined} adminKey - Переданный ключ администратора.
  * @returns {{ valid: boolean; status?: number; error?: string }} Результат проверки ключа.
  */
@@ -163,11 +164,11 @@ function validateAdminSecret(adminKey) {
     }
 
     const trimmedKey = adminKey.trim();
-    if (trimmedKey.length !== 30) {
+    if (trimmedKey.length === 0) {
         return {
             valid: false,
             status: 403,
-            error: 'Неверный формат ключа администратора (требуется ровно 30 символов)'
+            error: 'Неверный ключ администратора'
         };
     }
 
