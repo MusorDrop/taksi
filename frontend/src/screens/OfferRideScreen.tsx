@@ -84,7 +84,7 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
   } = useRideForm();
 
   return (
-    <Box sx={{ pb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
       <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Создать поездку
       </Typography>

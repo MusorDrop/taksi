@@ -18,7 +18,7 @@ export default function MyTripsScreen() {
   const driverRides = rides.filter((r) => r.driverId === user?.id);
 
   return (
-    <Box sx={{ pb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
       <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Мои поездки
       </Typography>

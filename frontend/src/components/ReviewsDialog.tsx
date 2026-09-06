@@ -101,8 +101,11 @@ export default function ReviewsDialog({
       maxWidth="sm"
       fullWidth
     >
-      <DialogTitle sx={{ m: 0, p: 2.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+      <DialogTitle
+        component="div"
+        sx={{ m: 0, p: 2.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <Typography variant="h6" component="span" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
           Отзывы о водителе
         </Typography>
         <IconButton size="small" onClick={onClose} aria-label="close" sx={{ borderRadius: 2 }}>

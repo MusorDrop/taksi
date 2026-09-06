@@ -165,6 +165,30 @@ function isPeakHour(dateInput) {
 }
 
 /**
+ * Добавление префикса "Екатеринбург, ", если в запрашиваемом адресе нет этого слова
+ * @param {string} address - Исходный адрес
+ * @returns {string}
+ */
+function ensureEkaterinburgPrefix(address) {
+    if (!address || typeof address !== 'string') {
+        return address;
+    }
+    const trimmed = address.trim();
+    if (!trimmed) {
+        return trimmed;
+    }
+    // Если переданы координаты строкой (например, "56.8439, 60.6534"), префикс не добавляем
+    if (/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.test(trimmed)) {
+        return trimmed;
+    }
+    // Если в строке уже присутствует слово "Екатеринбург" (без учета регистра), возвращаем как есть
+    if (/екатеринбург/i.test(trimmed)) {
+        return trimmed;
+    }
+    return `Екатеринбург, ${trimmed}`;
+}
+
+/**
  * Прямое геокодирование адреса в координаты через Yandex Geocoder API с кэшированием в geocode_cache
  * @param {string} address - Строка адреса
  * @returns {Promise<{ longitude: number, latitude: number, full_address: string }>}
@@ -174,34 +198,40 @@ async function geocodeAddress(address) {
         return { longitude: DEFAULT_COORDS.lon, latitude: DEFAULT_COORDS.lat, full_address: DEFAULT_COORDS.name };
     }
 
-    // 1. Проверка наличия в кэше базы данных
-    const cached = await getFromGeocodeCache(address);
-    if (cached) {
-        return cached;
-    }
-
-    // 2. Попытка парсинга, если переданы координаты строкой
+    // 1. Попытка парсинга, если переданы координаты строкой
     const parsedCoords = parseCoordinatePair(address);
     if (parsedCoords) {
         return { longitude: parsedCoords.lon, latitude: parsedCoords.lat, full_address: address };
+    }
+
+    // Добавляем префикс "Екатеринбург, ", если в запрашиваемом адресе нет этого слова
+    const targetAddress = ensureEkaterinburgPrefix(address);
+
+    // 2. Проверка наличия в кэше базы данных (проверяем оба варианта)
+    const cached = (await getFromGeocodeCache(targetAddress)) || (await getFromGeocodeCache(address));
+    if (cached) {
+        return cached;
     }
 
     // 3. Запрос к Yandex Geocoder API
     const apiKey = process.env.YANDEX_MAPS_API_KEY;
     if (apiKey) {
         try {
-            const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(address)}&format=json&results=1`;
+            const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(targetAddress)}&format=json&results=1`;
             const response = await fetchWithTimeout(url);
             if (response.ok) {
                 const data = await response.json();
                 const geoObject = data?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
                 if (geoObject) {
                     const pos = geoObject.Point?.pos?.split(' ');
-                    const fullAddress = geoObject.metaDataProperty?.GeocoderMetaData?.text || geoObject.name || address;
+                    const fullAddress = geoObject.metaDataProperty?.GeocoderMetaData?.text || geoObject.name || targetAddress;
                     if (pos && pos.length === 2) {
                         const lon = parseFloat(pos[0]);
                         const lat = parseFloat(pos[1]);
-                        await saveToGeocodeCache(address, lon, lat, fullAddress);
+                        await saveToGeocodeCache(targetAddress, lon, lat, fullAddress);
+                        if (targetAddress !== address) {
+                            await saveToGeocodeCache(address, lon, lat, fullAddress);
+                        }
                         return { longitude: lon, latitude: lat, full_address: fullAddress };
                     }
                 }
@@ -212,13 +242,16 @@ async function geocodeAddress(address) {
     }
 
     // 4. Резервный поиск по известным локациям
-    const known = findInKnownLocations(address);
+    const known = findInKnownLocations(targetAddress) || findInKnownLocations(address);
     if (known) {
-        await saveToGeocodeCache(address, known.lon, known.lat, known.name);
+        await saveToGeocodeCache(targetAddress, known.lon, known.lat, known.name);
+        if (targetAddress !== address) {
+            await saveToGeocodeCache(address, known.lon, known.lat, known.name);
+        }
         return { longitude: known.lon, latitude: known.lat, full_address: known.name };
     }
 
-    return { longitude: DEFAULT_COORDS.lon, latitude: DEFAULT_COORDS.lat, full_address: address };
+    return { longitude: DEFAULT_COORDS.lon, latitude: DEFAULT_COORDS.lat, full_address: targetAddress };
 }
 
 /**
@@ -379,10 +412,22 @@ async function suggestAddress(query, boundedBy) {
  * @returns {Promise<{ distance_meters: number, duration_seconds: number, distance_km: number, duration_minutes: number, route_polyline: object }>}
  */
 async function buildRoute(startCoords, endCoords) {
-    const startLat = Number(startCoords?.lat ?? startCoords?.latitude ?? DEFAULT_COORDS.lat);
-    const startLon = Number(startCoords?.lon ?? startCoords?.longitude ?? DEFAULT_COORDS.lon);
-    const endLat = Number(endCoords?.lat ?? endCoords?.latitude ?? DEFAULT_COORDS.lat);
-    const endLon = Number(endCoords?.lon ?? endCoords?.longitude ?? DEFAULT_COORDS.lon);
+    let resolvedStart = startCoords;
+    let resolvedEnd = endCoords;
+
+    if (typeof resolvedStart === 'string') {
+        const geo = await geocodeAddress(resolvedStart);
+        resolvedStart = { lat: geo.latitude, lon: geo.longitude };
+    }
+    if (typeof resolvedEnd === 'string') {
+        const geo = await geocodeAddress(resolvedEnd);
+        resolvedEnd = { lat: geo.latitude, lon: geo.longitude };
+    }
+
+    const startLat = Number(resolvedStart?.lat ?? resolvedStart?.latitude ?? DEFAULT_COORDS.lat);
+    const startLon = Number(resolvedStart?.lon ?? resolvedStart?.longitude ?? DEFAULT_COORDS.lon);
+    const endLat = Number(resolvedEnd?.lat ?? resolvedEnd?.latitude ?? DEFAULT_COORDS.lat);
+    const endLon = Number(resolvedEnd?.lon ?? resolvedEnd?.longitude ?? DEFAULT_COORDS.lon);
 
     const apiKey = process.env.YANDEX_ROUTER_API_KEY;
     if (apiKey) {
@@ -481,6 +526,7 @@ function calculateTripPrice(distanceMeters, durationSeconds = 0, departureTime =
 }
 
 module.exports = {
+    ensureEkaterinburgPrefix,
     geocodeAddress,
     reverseGeocode,
     suggestAddress,
