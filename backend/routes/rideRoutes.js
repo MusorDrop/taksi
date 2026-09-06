@@ -24,6 +24,10 @@ router.use(rideLimiter);
 // Получение списка поездок
 router.get('/', rideController.getRides);
 
+// Предварительный просмотр маршрута (полилиния, цена, дистанция, время)
+router.get('/route-preview', rideController.getRoutePreview);
+router.post('/route-preview', rideController.getRoutePreview);
+
 // Получение информации о конкретной поездке по ID (🔵-9)
 router.get('/:id', rideController.getRideById);
 

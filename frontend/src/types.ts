@@ -74,6 +74,14 @@ export interface Ride {
   regular_days?: string | null;
   averageRating?: number | null;
   driverAvatarUrl?: string | null;
+  startLon?: number;
+  startLat?: number;
+  endLon?: number;
+  endLat?: number;
+  startCoords?: { lon: number; lat: number };
+  endCoords?: { lon: number; lat: number };
+  polyline?: [number, number][];
+  durationMin?: number;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -138,7 +146,33 @@ export interface BackendRide {
   status?: string;
   ride_type?: 'one_off' | 'regular';
   regular_days?: string | null;
+  polyline?: [number, number][];
+  duration_min?: number;
   created_at?: string;
+}
+
+/**
+ * Ответ сервера на расчет предварительного маршрута
+ */
+export interface RoutePreviewResponse {
+  start?: { lon: number; lat: number; name?: string };
+  end?: { lon: number; lat: number; name?: string };
+  from?: { lon: number; lat: number; address?: string };
+  to?: { lon: number; lat: number; address?: string };
+  start_coords?: { lon: number; lat: number };
+  end_coords?: { lon: number; lat: number };
+  distance_km?: number;
+  distanceKm?: number;
+  distance_meters?: number;
+  duration_min?: number;
+  durationMin?: number;
+  duration_seconds?: number;
+  price?: number;
+  base_price?: number;
+  is_peak?: boolean;
+  isPeak?: boolean;
+  polyline?: [number, number][] | { coordinates?: [number, number][] };
+  route_polyline?: [number, number][] | { coordinates?: [number, number][] };
 }
 
 /**
