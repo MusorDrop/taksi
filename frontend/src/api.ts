@@ -3,6 +3,7 @@
  * Реализует автоматическое добавление JWT-токена, обработку 401 ошибки и поддержку AbortSignal.
  */
 
+import type { AiParseResponse } from './types';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -171,6 +172,9 @@ export const api = {
 
   joinRide: <T = unknown>(rideId: string, selectedDay?: string): Promise<T> =>
     joinRideApi<T>(rideId, selectedDay),
+
+  parseAiRequest: (message: string): Promise<AiParseResponse> =>
+    parseAiRequest(message),
 };
 
 /**
@@ -181,5 +185,13 @@ export const api = {
 export async function joinRideApi<T = unknown>(rideId: string, selectedDay?: string): Promise<T> {
   const body = selectedDay ? { selected_day: selectedDay } : undefined;
   return api.post<T>(`/api/rides/${rideId}/join`, body);
+}
+
+/**
+ * Вызов эндпоинта GigaChat AI для распознавания параметров поездки из свободного текста
+ * @param message - Текст запроса пользователя на естественном языке
+ */
+export async function parseAiRequest(message: string): Promise<AiParseResponse> {
+  return api.post<AiParseResponse>('/api/ai/parse', { message, text: message });
 }
 

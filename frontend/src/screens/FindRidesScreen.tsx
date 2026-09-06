@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { filterRidesByNlpQuery } from '../utils/nlpParser';
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -16,8 +16,6 @@ import RadioGroup from '@mui/material/RadioGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Switch from '@mui/material/Switch';
 import IconButton from '@mui/material/IconButton';
-import SearchIcon from '@mui/icons-material/Search';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import AddIcon from '@mui/icons-material/Add';
@@ -28,8 +26,17 @@ import AirlineSeatReclineNormalIcon from '@mui/icons-material/AirlineSeatRecline
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
 import RideCard from '../components/RideCard';
+import AiSearchBanner from '../components/AiSearchBanner';
 import { useApp } from '../AppContext';
-import { DAY_KEYS, DAY_SHORT, type DayKey, type Ride } from '../types';
+import { api } from '../api';
+import {
+  DAY_KEYS,
+  DAY_SHORT,
+  type DayKey,
+  type Ride,
+  type RideSearchFilters,
+  type AiParseResponse,
+} from '../types';
 import { getRideDayKey } from '../utils';
 import { AVAILABLE_TAGS } from '../hooks/useRideForm';
 
@@ -144,6 +151,14 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [query, setQuery] = useState<string>('');
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiQuery, setAiQuery] = useState<string>('');
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiParsedResult, setAiParsedResult] = useState<AiParseResponse | null>(null);
+  const [filters, setFilters] = useState<RideSearchFilters>({
+    from: '',
+    to: '',
+    date: '',
+    time: '',
+  });
   const [filterDay, setFilterDay] = useState<DayKey | null>(null);
   const [sortBy, setSortBy] = useState<SortOption | null>(null);
   const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
@@ -151,23 +166,61 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
 
-  const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Отправка текста запроса в сервис GigaChat AI и автоматическое применение фильтров
+   */
+  const handleAiSearch = async (): Promise<void> => {
+    const trimmed = aiQuery.trim();
+    if (!trimmed) {
+      return;
+    }
 
-  useEffect(() => {
-    return () => {
-      if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
-    };
-  }, []);
-
-  const handleAiSearch = (): void => {
-    if (!aiQuery.trim()) return;
     setAiLoading(true);
-    if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
-    aiSearchTimerRef.current = setTimeout(() => {
-      setQuery(aiQuery);
+    setAiError(null);
+
+    try {
+      const response = await api.parseAiRequest(trimmed);
+      setAiParsedResult(response);
+
+      const parsedFrom = response.from || response.start_point?.address || '';
+      const parsedTo = response.to || response.end_point?.address || '';
+      const parsedDate = response.date || '';
+      const parsedTime = response.time || '';
+
+      setFilters({
+        from: parsedFrom,
+        to: parsedTo,
+        date: parsedDate,
+        time: parsedTime,
+      });
+
+      // Если в ответе распознана дата, вычисляем день недели и выставляем чип
+      if (parsedDate) {
+        const dateObj = new Date(parsedDate);
+        if (!isNaN(dateObj.getTime())) {
+          const dayKeys: DayKey[] = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          setFilterDay(dayKeys[dateObj.getDay()]);
+        }
+      }
+
+      // Если распознано количество мест от 2
+      if (typeof response.seats === 'number' && response.seats >= 2) {
+        setFilterTwoSeats(true);
+      }
+
+      // Если распознаны теги особенностей поездки
+      if (Array.isArray(response.tags) && response.tags.length > 0) {
+        setFilterTags((prev) => Array.from(new Set([...prev, ...response.tags!])));
+      }
+
+      // Автоматический вызов поиска поездок
+      await fetchRides();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось распознать запрос с помощью ИИ';
+      setAiError(message);
+    } finally {
       setAiLoading(false);
-      aiSearchTimerRef.current = null;
-    }, 1500);
+    }
   };
 
   /**
@@ -205,16 +258,20 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   const handleResetFilters = (): void => {
     setQuery('');
     setAiQuery('');
+    setFilters({ from: '', to: '', date: '', time: '' });
     setFilterDay(null);
     setSortBy(null);
     setFilterTwoSeats(false);
     setFilterTags([]);
+    setAiParsedResult(null);
+    setAiError(null);
   };
 
   /**
    * Сбрасывает только параметры фильтрации и сортировки в шторке
    */
   const handleResetDrawerFilters = (): void => {
+    setFilters({ from: '', to: '', date: '', time: '' });
     setSortBy(null);
     setFilterTwoSeats(false);
     setFilterTags([]);
@@ -225,11 +282,15 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
    */
   const activeFiltersCount = useMemo<number>(() => {
     let count = 0;
+    if (filters.from.trim()) count += 1;
+    if (filters.to.trim()) count += 1;
+    if (filters.date.trim()) count += 1;
+    if (filters.time.trim()) count += 1;
     if (sortBy !== null) count += 1;
     if (filterTwoSeats) count += 1;
     count += filterTags.length;
     return count;
-  }, [sortBy, filterTwoSeats, filterTags]);
+  }, [filters, sortBy, filterTwoSeats, filterTags]);
 
   /**
    * Доступные теги для фильтрации поездок (согласованы со списком тегов при создании)
@@ -254,12 +315,43 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
       });
     }
 
+    if (filters.from.trim()) {
+      const fromLower = filters.from.trim().toLowerCase();
+      result = result.filter((r) => r.from.toLowerCase().includes(fromLower));
+    }
+
+    if (filters.to.trim()) {
+      const toLower = filters.to.trim().toLowerCase();
+      result = result.filter((r) => r.to.toLowerCase().includes(toLower));
+    }
+
+    if (filters.date.trim()) {
+      const targetDate = filters.date.trim();
+      result = result.filter((r) => {
+        const rideDate = (r.departureTime || r.departure_time || r.dateString || '').slice(0, 10);
+        return rideDate === targetDate;
+      });
+    }
+
+    if (filters.time.trim()) {
+      const targetTime = filters.time.trim();
+      result = result.filter((r) => {
+        if (r.time && r.time.startsWith(targetTime)) return true;
+        const dep = r.departureTime || r.departure_time;
+        if (dep) {
+          const timePart = dep.slice(11, 16);
+          return timePart === targetTime;
+        }
+        return false;
+      });
+    }
+
     if (query.trim()) {
       result = filterRidesByNlpQuery(result, query);
     }
 
     return sortRides(result, sortBy, userLocation);
-  }, [rides, query, filterDay, filterTwoSeats, filterTags, sortBy, userLocation]);
+  }, [rides, query, filters, filterDay, filterTwoSeats, filterTags, sortBy, userLocation]);
 
   return (
     <Box sx={{ pb: { xs: 12, sm: 8 } }}>
@@ -285,89 +377,111 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
         </Alert>
       )}
 
-      {/* Quick AI Search */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          mb: 2.5,
-          borderRadius: 3.5,
-          background: 'linear-gradient(135deg, #0071e3 0%, #0056b3 50%, #003e85 100%)',
-          boxShadow: '0 8px 24px -4px rgba(0, 113, 227, 0.35)',
-          color: '#ffffff',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <Typography
-          variant="subtitle2"
+      {/* Ошибка распознавания AI */}
+      {aiError && (
+        <Alert
+          severity="error"
+          onClose={() => setAiError(null)}
+          sx={{ mb: 2, borderRadius: 2.5 }}
+        >
+          {aiError}
+        </Alert>
+      )}
+
+      {/* Быстрый поиск ИИ */}
+      <AiSearchBanner
+        query={aiQuery}
+        onChangeQuery={setAiQuery}
+        onSearch={handleAiSearch}
+        isLoading={aiLoading}
+      />
+
+      {/* Предложение создать поездку водителю, если распознана роль водителя */}
+      {aiParsedResult?.role === 'driver' && onNavigateToOffer && (
+        <Alert
+          severity="info"
+          action={
+            <Button
+              color="primary"
+              variant="contained"
+              size="small"
+              onClick={onNavigateToOffer}
+              sx={{ borderRadius: 2, fontWeight: 700 }}
+            >
+              Создать поездку
+            </Button>
+          }
+          sx={{ mb: 2, borderRadius: 2.5 }}
+        >
+          ИИ определил, что вы хотите поехать как водитель. Вы можете сразу опубликовать эту поездку!
+        </Alert>
+      )}
+
+      {/* Активные фильтры маршрута и времени */}
+      {(Boolean(filters.from) || Boolean(filters.to) || Boolean(filters.date) || Boolean(filters.time)) && (
+        <Paper
+          variant="outlined"
           sx={{
-            color: 'white',
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.6,
-            mb: 1.25,
-            fontSize: '0.85rem',
+            p: 1.5,
+            mb: 2,
+            borderRadius: 3,
+            bgcolor: 'background.paper',
+            borderColor: 'primary.light',
+            boxShadow: '0 2px 8px -2px rgba(0, 113, 227, 0.12)',
           }}
         >
-          <AutoAwesomeIcon sx={{ fontSize: 16 }} />
-          Быстрый поиск ИИ
-        </Typography>
-        <Stack direction="row" spacing={1}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Например: Нужно уехать в среду к 8:30 из центра"
-            value={aiQuery}
-            onChange={(e) => setAiQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAiSearch();
-              }
-            }}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                bgcolor: 'white',
-                borderRadius: 2.5,
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                '& fieldset': { borderColor: 'transparent' },
-                '&:hover fieldset': { borderColor: 'transparent' },
-                '&.Mui-focused fieldset': { borderColor: 'white' },
-              },
-              '& .MuiOutlinedInput-input': {
-                color: '#0f172a',
-              },
-              '& .MuiOutlinedInput-input::placeholder': {
-                color: '#64748b',
-                opacity: 1,
-              },
-            }}
-          />
-          <Button
-            variant="contained"
-            size="small"
-            onClick={handleAiSearch}
-            disabled={aiLoading}
-            sx={{
-              bgcolor: 'white',
-              color: 'primary.main',
-              borderRadius: 2.5,
-              fontWeight: 700,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)',
-              '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.92)',
-                transform: 'scale(1.04)',
-              },
-              minWidth: 44,
-              px: 1.5,
-            }}
-          >
-            {aiLoading ? <CircularProgress size={20} /> : <SearchIcon />}
-          </Button>
-        </Stack>
-      </Paper>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
+              Фильтры маршрута {aiParsedResult ? '• Распознано GigaChat' : ''}
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => setFilters({ from: '', to: '', date: '', time: '' })}
+              sx={{ fontSize: '0.75rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
+            >
+              Сбросить
+            </Button>
+          </Stack>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+            {filters.from && (
+              <Chip
+                size="small"
+                label={`Откуда: ${filters.from}`}
+                onDelete={() => setFilters((prev) => ({ ...prev, from: '' }))}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+            {filters.to && (
+              <Chip
+                size="small"
+                label={`Куда: ${filters.to}`}
+                onDelete={() => setFilters((prev) => ({ ...prev, to: '' }))}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+            {filters.date && (
+              <Chip
+                size="small"
+                label={`Дата: ${filters.date}`}
+                onDelete={() => setFilters((prev) => ({ ...prev, date: '' }))}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+            {filters.time && (
+              <Chip
+                size="small"
+                label={`Время: ${filters.time}`}
+                onDelete={() => setFilters((prev) => ({ ...prev, time: '' }))}
+                color="primary"
+                variant="outlined"
+              />
+            )}
+          </Box>
+        </Paper>
+      )}
 
       {/* Кнопка вызова фильтров и сортировки */}
       <Box sx={{ mb: 1.5 }}>
@@ -580,6 +694,61 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
 
         {/* Прокручиваемое содержимое с параметрами */}
         <Box sx={{ overflowY: 'auto', pr: 0.5, flex: 1, mb: 2.5 }}>
+          {/* Маршрут и время */}
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              color: 'text.secondary',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              display: 'block',
+              mb: 1.5,
+            }}
+          >
+            Маршрут и время
+          </Typography>
+          <Stack spacing={1.5} sx={{ mb: 2.5 }}>
+            <TextField
+              label="Пункт отправления (откуда)"
+              size="small"
+              fullWidth
+              placeholder="Например: УрФУ Мира 19"
+              value={filters.from}
+              onChange={(e) => setFilters((prev) => ({ ...prev, from: e.target.value }))}
+            />
+            <TextField
+              label="Пункт назначения (куда)"
+              size="small"
+              fullWidth
+              placeholder="Например: Кампус Новокольцовский"
+              value={filters.to}
+              onChange={(e) => setFilters((prev) => ({ ...prev, to: e.target.value }))}
+            />
+            <Stack direction="row" spacing={1.5}>
+              <TextField
+                label="Дата поездки"
+                type="date"
+                size="small"
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                value={filters.date}
+                onChange={(e) => setFilters((prev) => ({ ...prev, date: e.target.value }))}
+              />
+              <TextField
+                label="Время"
+                type="time"
+                size="small"
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                value={filters.time}
+                onChange={(e) => setFilters((prev) => ({ ...prev, time: e.target.value }))}
+              />
+            </Stack>
+          </Stack>
+
+          <Divider sx={{ my: 2 }} />
+
           {/* Сортировка */}
           <Typography
             variant="caption"

@@ -322,3 +322,48 @@ export interface AdminVehiclesResponse {
   vehicles: AdminVehicle[];
 }
 
+/**
+ * Географическая точка с координатами и адресом, возвращаемая AI парсером
+ */
+export interface AiParsedPoint {
+  lat: number;
+  lon: number;
+  address: string;
+}
+
+/**
+ * Распарсенные данные поездки от сервиса GigaChat AI
+ */
+export interface AiParsedRide {
+  role?: 'passenger' | 'driver' | null;
+  from?: string | null;
+  to?: string | null;
+  date?: string | null;
+  time?: string | null;
+  departure_time?: string | null;
+  price?: number | null;
+  seats?: number | null;
+  comment?: string | null;
+  tags?: string[] | null;
+  start_point?: AiParsedPoint | null;
+  end_point?: AiParsedPoint | null;
+}
+
+/**
+ * Ответ сервиса GigaChat AI на запрос распознавания параметров поездки
+ */
+export interface AiParseResponse extends AiParsedRide {
+  success: boolean;
+  parsed?: AiParsedRide;
+}
+
+/**
+ * Параметры фильтрации поездок на экране поиска
+ */
+export interface RideSearchFilters {
+  from: string;
+  to: string;
+  date: string;
+  time: string;
+}
+
