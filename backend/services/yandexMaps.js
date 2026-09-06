@@ -12,10 +12,11 @@ const REQUEST_TIMEOUT_MS = 3000;
  * Выполнение HTTP-запроса с тайм-аутом
  * @param {string} url - URL ресурса
  * @param {number} [timeoutMs=REQUEST_TIMEOUT_MS] - Таймаут в мс
+ * @param {object} [headers={}] - Заголовки HTTP-запроса
  * @returns {Promise<Response>}
  */
-async function fetchWithTimeout(url, timeoutMs = REQUEST_TIMEOUT_MS) {
-    return fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+async function fetchWithTimeout(url, timeoutMs = REQUEST_TIMEOUT_MS, headers = {}) {
+    return fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers });
 }
 
 /**
@@ -189,8 +190,128 @@ function ensureEkaterinburgPrefix(address) {
 }
 
 /**
- * Прямое геокодирование адреса в координаты через Yandex Geocoder API с кэшированием в geocode_cache
- * @param {string} address - Строка адреса
+ * Извлечение координат и адреса из объекта Feature Yandex Search API
+ * @param {object} feature - Объект Feature из ответа Yandex Search API
+ * @param {string} fallbackQuery - Резервная строка запроса
+ * @returns {{ longitude: number, latitude: number, full_address: string } | null}
+ */
+function parseSearchFeature(feature, fallbackQuery) {
+    if (!feature) {
+        return null;
+    }
+
+    const coords = feature.geometry?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) {
+        return null;
+    }
+
+    const lon = parseFloat(coords[0]);
+    const lat = parseFloat(coords[1]);
+    if (isNaN(lon) || isNaN(lat)) {
+        return null;
+    }
+
+    const orgName = feature.properties?.CompanyMetaData?.name || feature.properties?.name;
+    const orgAddress = feature.properties?.CompanyMetaData?.address || feature.properties?.description;
+
+    let fullAddress = orgAddress || orgName || fallbackQuery;
+    if (orgName && orgAddress && !orgAddress.toLowerCase().includes(orgName.toLowerCase())) {
+        fullAddress = `${orgName}, ${orgAddress}`;
+    }
+
+    return { longitude: lon, latitude: lat, full_address: fullAddress };
+}
+
+/**
+ * Поиск организации или объекта через Yandex Search API (API Поиска по организациям)
+ * @param {string} query - Поисковый запрос (название организации, заведения или адрес)
+ * @returns {Promise<{ longitude: number, latitude: number, full_address: string } | null>}
+ */
+async function searchOrganization(query) {
+    if (!query || typeof query !== 'string') {
+        return null;
+    }
+
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+        return null;
+    }
+
+    const apiKey = process.env.YANDEX_SEARCH_API_KEY;
+    if (!apiKey) {
+        return null;
+    }
+
+    const referer = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',')[0].trim()
+        : 'http://localhost:5173/';
+
+    try {
+        const url = `https://search-maps.yandex.ru/v1/?text=${encodeURIComponent(trimmed)}&lang=ru_RU&apikey=${apiKey}&bbox=${EKATERINBURG_BOUNDS.bbox}&rspn=1&results=1`;
+        const response = await fetchWithTimeout(url, REQUEST_TIMEOUT_MS, { Referer: referer });
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        const feature = data?.features?.[0];
+        return parseSearchFeature(feature, trimmed);
+    } catch (err) {
+        console.warn('Предупреждение: ошибка обращения к Yandex Search API:', err.message);
+        return null;
+    }
+}
+
+/**
+ * Геокодирование через стандартный Yandex Geocoder API (фоллбэк)
+ * @param {string} targetAddress - Адрес с префиксом города
+ * @returns {Promise<{ longitude: number, latitude: number, full_address: string } | null>}
+ */
+async function geocodeViaStandardApi(targetAddress) {
+    const apiKey = process.env.YANDEX_MAPS_API_KEY;
+    if (!apiKey) {
+        return null;
+    }
+
+    const referer = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',')[0].trim()
+        : 'http://localhost:5173/';
+
+    try {
+        const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(targetAddress)}&format=json&results=1&bbox=${EKATERINBURG_BOUNDS.bbox}&rspn=1`;
+        const response = await fetchWithTimeout(url, REQUEST_TIMEOUT_MS, { Referer: referer });
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        const geoObject = data?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+        if (!geoObject) {
+            return null;
+        }
+
+        const pos = geoObject.Point?.pos?.split(' ');
+        if (!pos || pos.length !== 2) {
+            return null;
+        }
+
+        const lon = parseFloat(pos[0]);
+        const lat = parseFloat(pos[1]);
+        if (isNaN(lon) || isNaN(lat)) {
+            return null;
+        }
+
+        const fullAddress = geoObject.metaDataProperty?.GeocoderMetaData?.text || geoObject.name || targetAddress;
+        return { longitude: lon, latitude: lat, full_address: fullAddress };
+    } catch (err) {
+        console.warn('Предупреждение: ошибка обращения к Yandex Geocoder:', err.message);
+        return null;
+    }
+}
+
+/**
+ * Прямое геокодирование адреса в координаты через Yandex Search API и Yandex Geocoder API с кэшированием в geocode_cache
+ * @param {string} address - Строка адреса или названия организации
  * @returns {Promise<{ longitude: number, latitude: number, full_address: string }>}
  */
 async function geocodeAddress(address) {
@@ -213,35 +334,27 @@ async function geocodeAddress(address) {
         return cached;
     }
 
-    // 3. Запрос к Yandex Geocoder API
-    const apiKey = process.env.YANDEX_MAPS_API_KEY;
-    if (apiKey) {
-        try {
-            const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(targetAddress)}&format=json&results=1&bbox=${EKATERINBURG_BOUNDS.bbox}&rspn=1`;
-            const response = await fetchWithTimeout(url);
-            if (response.ok) {
-                const data = await response.json();
-                const geoObject = data?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-                if (geoObject) {
-                    const pos = geoObject.Point?.pos?.split(' ');
-                    const fullAddress = geoObject.metaDataProperty?.GeocoderMetaData?.text || geoObject.name || targetAddress;
-                    if (pos && pos.length === 2) {
-                        const lon = parseFloat(pos[0]);
-                        const lat = parseFloat(pos[1]);
-                        await saveToGeocodeCache(targetAddress, lon, lat, fullAddress);
-                        if (targetAddress !== address) {
-                            await saveToGeocodeCache(address, lon, lat, fullAddress);
-                        }
-                        return { longitude: lon, latitude: lat, full_address: fullAddress };
-                    }
-                }
-            }
-        } catch (err) {
-            console.warn('Предупреждение: ошибка обращения к Yandex Geocoder:', err.message);
+    // 3. Первичный поиск организации через Yandex Search API
+    const orgResult = (await searchOrganization(address)) || (targetAddress !== address ? await searchOrganization(targetAddress) : null);
+    if (orgResult) {
+        await saveToGeocodeCache(targetAddress, orgResult.longitude, orgResult.latitude, orgResult.full_address);
+        if (targetAddress !== address) {
+            await saveToGeocodeCache(address, orgResult.longitude, orgResult.latitude, orgResult.full_address);
         }
+        return orgResult;
     }
 
-    // 4. Резервный поиск по известным локациям
+    // 4. Фоллбэк на стандартный Yandex Geocoder API
+    const geocoderResult = await geocodeViaStandardApi(targetAddress);
+    if (geocoderResult) {
+        await saveToGeocodeCache(targetAddress, geocoderResult.longitude, geocoderResult.latitude, geocoderResult.full_address);
+        if (targetAddress !== address) {
+            await saveToGeocodeCache(address, geocoderResult.longitude, geocoderResult.latitude, geocoderResult.full_address);
+        }
+        return geocoderResult;
+    }
+
+    // 5. Резервный поиск по словарю локаций (если заданы)
     const known = findInKnownLocations(targetAddress) || findInKnownLocations(address);
     if (known) {
         await saveToGeocodeCache(targetAddress, known.lon, known.lat, known.name);
@@ -527,6 +640,7 @@ function calculateTripPrice(distanceMeters, durationSeconds = 0, departureTime =
 
 module.exports = {
     ensureEkaterinburgPrefix,
+    searchOrganization,
     geocodeAddress,
     reverseGeocode,
     suggestAddress,
