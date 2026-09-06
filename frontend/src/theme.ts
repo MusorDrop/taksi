@@ -3,6 +3,7 @@ import { blue, blueGrey } from '@mui/material/colors';
 import { ruRU } from '@mui/material/locale';
 import type { PaletteMode, Theme } from '@mui/material';
 
+
 const createAppTheme = (mode: PaletteMode): Theme =>
   createTheme(
     {
