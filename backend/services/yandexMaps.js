@@ -217,7 +217,7 @@ async function geocodeAddress(address) {
     const apiKey = process.env.YANDEX_MAPS_API_KEY;
     if (apiKey) {
         try {
-            const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(targetAddress)}&format=json&results=1`;
+            const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${apiKey}&geocode=${encodeURIComponent(targetAddress)}&format=json&results=1&bbox=${EKATERINBURG_BOUNDS.bbox}&rspn=1`;
             const response = await fetchWithTimeout(url);
             if (response.ok) {
                 const data = await response.json();
