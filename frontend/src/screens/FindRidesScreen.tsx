@@ -73,7 +73,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   }, [rides, query, filterDay, filterDest]);
 
   return (
-    <Box sx={{ pb: 2 }}>
+    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
         <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
           Найти поездку

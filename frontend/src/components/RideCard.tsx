@@ -13,7 +13,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import Rating from '@mui/material/Rating';
 import TextField from '@mui/material/TextField';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -40,10 +39,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { DAY_FULL, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
-import { api } from '../api';
 import { useApp } from '../AppContext';
 import RouteMap from './RouteMap';
 import ReviewsDialog from './ReviewsDialog';
+import ReviewDialog from './ReviewDialog';
 
 /**
  * Преобразование дня недели (Mon, Tue...) в краткий русский формат (Пн, Вт...)
@@ -103,10 +102,6 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
-  const [rating, setRating] = useState<number>(5);
-  const [comment, setComment] = useState<string>('');
-  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [isReviewed, setIsReviewed] = useState<boolean>(false);
 
   // Старт и завершение поездки водителем
@@ -191,28 +186,6 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
     setReviewsDialogOpen(true);
   };
 
-  // Отправка отзыва о поездке через POST /api/reviews
-  const handleSubmitReview = async (): Promise<void> => {
-    if (isSubmittingReview) return;
-    setIsSubmittingReview(true);
-    setReviewError(null);
-
-    try {
-      await api.post('/api/reviews', {
-        ride_id: ride.id,
-        reviewee_id: ride.driverId,
-        rating,
-        comment: comment.trim() || undefined,
-      });
-      setIsReviewed(true);
-      setReviewDialogOpen(false);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Не удалось отправить отзыв';
-      setReviewError(message);
-    } finally {
-      setIsSubmittingReview(false);
-    }
-  };
 
   const handleKickPassenger = async (passengerId: string): Promise<void> => {
     setKickingPassengerId(passengerId);
@@ -335,7 +308,15 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       }}
     >
       <CardContent sx={{ p: { xs: 2, sm: 2.25 }, '&:last-child': { pb: { xs: 2, sm: 2.25 } } }}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
+        <Stack
+          direction="row"
+          spacing={{ xs: 1, sm: 1.5 }}
+          alignItems="center"
+          sx={{
+            flexWrap: 'wrap',
+            rowGap: 1,
+          }}
+        >
           <Box
             onClick={handleOpenReviews}
             sx={{
@@ -347,6 +328,8 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               p: 0.6,
               m: -0.6,
               transition: 'background-color 0.15s ease',
+              flexShrink: 0,
+              maxWidth: { xs: 'calc(100% - 150px)', sm: 'none' },
               '&:hover': {
                 bgcolor: 'action.hover',
               },
@@ -393,7 +376,15 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             </Box>
           </Box>
 
-          <Box sx={{ flex: 1, minWidth: 0, pl: 0.5 }}>
+          <Box
+            sx={{
+              flex: { xs: '1 0 100%', sm: 1 },
+              order: { xs: 3, sm: 2 },
+              minWidth: 0,
+              pl: { xs: 0, sm: 0.5 },
+              mt: { xs: 0.25, sm: 0 },
+            }}
+          >
             <Stack direction="row" spacing={0.5} alignItems="center">
               <AccessTimeIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
@@ -401,7 +392,15 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               </Typography>
             </Stack>
           </Box>
-          <Box sx={{ textAlign: 'right' }}>
+
+          <Box
+            sx={{
+              textAlign: 'right',
+              order: { xs: 2, sm: 3 },
+              ml: { xs: 'auto', sm: 0 },
+              flexShrink: 0,
+            }}
+          >
             <Typography variant="h6" color="primary.main" sx={{ fontWeight: 750, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
               {ride.price} ₽
             </Typography>
@@ -422,6 +421,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               </Typography>
             </Box>
           </Box>
+
           <IconButton
             size="small"
             onClick={(e) => {
@@ -429,6 +429,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               setExpanded(!expanded);
             }}
             sx={{
+              order: { xs: 2, sm: 4 },
               transform: expanded ? 'rotate(180deg)' : 'none',
               transition: 'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease',
               p: 0.6,
@@ -1023,61 +1024,14 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
       </Dialog>
 
       {/* Модальное окно создания отзыва */}
-      <Dialog
+      <ReviewDialog
         open={reviewDialogOpen}
-        onClose={() => !isSubmittingReview && setReviewDialogOpen(false)}
-        onClick={(e) => e.stopPropagation()}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 600 }}>Оценить поездку</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Водитель: <strong>{ride.driverName}</strong>
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2">Ваша оценка:</Typography>
-              <Rating
-                value={rating}
-                onChange={(_, val) => setRating(val || 5)}
-                max={5}
-              />
-            </Box>
-            <TextField
-              fullWidth
-              multiline
-              rows={3}
-              label="Отзыв (необязательно)"
-              placeholder="Как прошла поездка? Пунктуальность, аккуратность вождения..."
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-            />
-            {reviewError && (
-              <Alert severity="error" onClose={() => setReviewError(null)}>
-                {reviewError}
-              </Alert>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => setReviewDialogOpen(false)}
-            disabled={isSubmittingReview}
-            color="inherit"
-          >
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSubmitReview}
-            disabled={isSubmittingReview}
-            startIcon={isSubmittingReview ? <CircularProgress size={16} color="inherit" /> : null}
-          >
-            {isSubmittingReview ? 'Отправка...' : 'Отправить отзыв'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onClose={() => setReviewDialogOpen(false)}
+        rideId={ride.id}
+        driverId={ride.driverId}
+        driverName={ride.driverName}
+        onSuccess={() => setIsReviewed(true)}
+      />
 
       {/* Модальное окно выбора дня для регулярной поездки */}
       <Dialog

@@ -182,6 +182,7 @@ const createAppTheme = (mode: PaletteMode): Theme => {
           styleOverrides: {
             paper: {
               borderRadius: 22,
+              backgroundColor: isDark ? '#1e293b' : '#ffffff',
               boxShadow: isDark
                 ? '0 24px 60px -10px rgba(0, 0, 0, 0.6)'
                 : '0 24px 60px -12px rgba(15, 23, 42, 0.22)',
