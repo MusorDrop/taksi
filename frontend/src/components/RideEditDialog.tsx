@@ -382,7 +382,7 @@ export default function RideEditDialog({ open, onClose, ride }: RideEditDialogPr
             size="small"
             onClick={handleClose}
             disabled={isSubmitting}
-            aria-label="close"
+            aria-label="Закрыть"
             sx={{ borderRadius: 2 }}
           >
             <CloseIcon />

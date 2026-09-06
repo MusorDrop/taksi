@@ -108,7 +108,7 @@ export default function ReviewsDialog({
         <Typography variant="h6" component="span" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
           Отзывы о водителе
         </Typography>
-        <IconButton size="small" onClick={onClose} aria-label="close" sx={{ borderRadius: 2 }}>
+        <IconButton size="small" onClick={onClose} aria-label="Закрыть" sx={{ borderRadius: 2 }}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -175,6 +175,7 @@ export default function ReviewsDialog({
             {reviews.map((rev) => (
               <Paper
                 key={rev.id}
+                component="article"
                 variant="outlined"
                 sx={{
                   p: 2,

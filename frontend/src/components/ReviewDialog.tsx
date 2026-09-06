@@ -80,9 +80,11 @@ export default function ReviewDialog({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2">Ваша оценка:</Typography>
             <Rating
+              name="driver-rating"
               value={rating}
               onChange={(_, val) => setRating(val || 5)}
               max={5}
+              aria-label="Оценка поездки от 1 до 5 звезд"
             />
           </Box>
           <TextField

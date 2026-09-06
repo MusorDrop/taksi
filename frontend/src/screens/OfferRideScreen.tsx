@@ -93,8 +93,8 @@ export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: Offe
   }, [success, onSuccess]);
 
   return (
-    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
+    <Box component="section" aria-label="Создать поездку" sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Создать поездку
       </Typography>
 
@@ -373,6 +373,7 @@ export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: Offe
               value={rideType}
               exclusive
               disabled={hasNoVehicles}
+              aria-label="Тип поездки: одноразовая или регулярная"
               onChange={(_, val) => {
                 if (val) setRideType(val);
               }}
@@ -480,6 +481,8 @@ export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: Offe
 
           {/* Карточка рекомендуемой цены с расчетом дистанции */}
           <Paper
+            component="section"
+            aria-label="Расчет стоимости маршрута"
             variant="outlined"
             sx={{
               p: 2.25,

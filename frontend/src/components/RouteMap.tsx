@@ -156,6 +156,8 @@ function RouteMapContent({
 
   return (
     <Box
+      role="region"
+      aria-label={`Интерактивная карта маршрута: ${from} — ${to}`}
       onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
       onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
       onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}

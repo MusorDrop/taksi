@@ -145,6 +145,11 @@ const createAppTheme = (mode: PaletteMode): Theme => {
               '&:active': {
                 transform: 'scale(0.97)',
               },
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: isDark ? '#38bdf8' : '#0071e3',
+                outlineOffset: 2,
+              },
             },
             containedPrimary: {
               boxShadow: '0 3px 12px 0 rgba(0, 113, 227, 0.22)',
@@ -271,6 +276,11 @@ const createAppTheme = (mode: PaletteMode): Theme => {
               fontWeight: 600,
               borderRadius: 9,
               transition: 'all 0.15s ease',
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: isDark ? '#38bdf8' : '#0071e3',
+                outlineOffset: 1,
+              },
             },
             filled: {
               backgroundColor: isDark ? 'rgba(148, 163, 184, 0.14)' : 'rgba(15, 23, 42, 0.06)',
@@ -335,6 +345,11 @@ const createAppTheme = (mode: PaletteMode): Theme => {
               '&.Mui-selected': {
                 color: isDark ? '#47a1ff' : '#0071e3',
               },
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: isDark ? '#38bdf8' : '#0071e3',
+                outlineOffset: 1,
+              },
             },
           },
         },
@@ -345,6 +360,11 @@ const createAppTheme = (mode: PaletteMode): Theme => {
               transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
               '&:active': {
                 transform: 'scale(0.92)',
+              },
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: isDark ? '#38bdf8' : '#0071e3',
+                outlineOffset: 2,
               },
             },
           },
@@ -463,6 +483,11 @@ const createAppTheme = (mode: PaletteMode): Theme => {
               color: isDark ? '#94a3b8' : '#64748b',
               '&.Mui-selected': {
                 color: '#0071e3',
+              },
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: isDark ? '#38bdf8' : '#0071e3',
+                outlineOffset: -2,
               },
             },
           },

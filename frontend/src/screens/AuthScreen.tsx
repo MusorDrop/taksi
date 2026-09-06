@@ -89,6 +89,7 @@ export default function AuthScreen() {
 
   return (
     <Box
+      component="main"
       sx={{
         minHeight: '100vh',
         display: 'flex',
@@ -127,7 +128,7 @@ export default function AuthScreen() {
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
           </Box>
-          <Typography variant="h4" sx={{ color: 'white', fontWeight: 750, letterSpacing: '-0.03em' }}>
+          <Typography variant="h4" component="h1" sx={{ color: 'white', fontWeight: 750, letterSpacing: '-0.03em' }}>
             Попутка
           </Typography>
           <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
@@ -152,10 +153,21 @@ export default function AuthScreen() {
               setErrorMessage(null);
             }}
             variant="fullWidth"
+            aria-label="Форма авторизации: вход или регистрация"
             sx={{ mb: 2.5 }}
           >
-            <Tab label="Вход" sx={{ fontWeight: 650, fontSize: '0.95rem' }} />
-            <Tab label="Регистрация" sx={{ fontWeight: 650, fontSize: '0.95rem' }} />
+            <Tab
+              id="auth-tab-login"
+              aria-controls="auth-tabpanel-login"
+              label="Вход"
+              sx={{ fontWeight: 650, fontSize: '0.95rem' }}
+            />
+            <Tab
+              id="auth-tab-register"
+              aria-controls="auth-tabpanel-register"
+              label="Регистрация"
+              sx={{ fontWeight: 650, fontSize: '0.95rem' }}
+            />
           </Tabs>
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.5 }}>

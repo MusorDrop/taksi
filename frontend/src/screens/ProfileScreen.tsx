@@ -284,8 +284,8 @@ export default function ProfileScreen() {
   const passengerCount = passengerRideIds.length;
 
   return (
-    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
+    <Box component="section" aria-label="Профиль пользователя" sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Профиль
       </Typography>
 
@@ -491,7 +491,17 @@ export default function ProfileScreen() {
         }}
       >
         <FormControlLabel
-          control={<Switch checked={mode === 'dark'} onChange={toggleTheme} />}
+          control={
+            <Switch
+              checked={mode === 'dark'}
+              onChange={toggleTheme}
+              slotProps={{
+                input: {
+                  'aria-label': 'Переключить тёмную тему',
+                },
+              }}
+            />
+          }
           label={
             <Stack direction="row" spacing={1} alignItems="center">
               <DarkModeIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
@@ -671,6 +681,7 @@ export default function ProfileScreen() {
                       setEditVehicleError(null);
                     }}
                     title="Редактировать автомобиль"
+                    aria-label={`Редактировать автомобиль ${v.brand} (${v.license_plate})`}
                   >
                     <EditIcon sx={{ fontSize: 18 }} />
                   </IconButton>
@@ -760,7 +771,7 @@ export default function ProfileScreen() {
       </Paper>
 
       {/* Юридическая информация и плашка тестовой версии */}
-      <Box sx={{ mt: 3, mb: 1, textAlign: 'center', px: 2 }}>
+      <Box component="footer" sx={{ mt: 3, mb: 1, textAlign: 'center', px: 2 }}>
         <Typography
           variant="caption"
           color="text.secondary"
