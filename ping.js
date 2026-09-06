@@ -1,5 +1,6 @@
 ﻿// ping.js - Скрипт проверки доступности фронтенда (5173) и бэкенда (3000)
 
+
 async function checkUrl(name, url) {
   try {
     const controller = new AbortController();

@@ -54,6 +54,27 @@ export interface YMapInstance {
   destroy(): void;
 }
 
+export interface YMaps2SuggestItem {
+  displayName?: string;
+  value?: string;
+  title?: string;
+  subtitle?: string;
+  hl?: Array<[number, number]>;
+}
+
+export interface YMaps2Namespace {
+  ready: (callback: () => void) => void;
+  suggest: (
+    query: string,
+    options?: {
+      results?: number;
+      boundedBy?: [[number, number], [number, number]];
+      strictBounds?: boolean;
+    }
+  ) => Promise<YMaps2SuggestItem[]>;
+  [key: string]: unknown;
+}
+
 export interface YMaps3Namespace {
   ready: Promise<unknown>;
   YMap: new (element: HTMLElement, props: YMapProps) => YMapInstance;
@@ -68,8 +89,10 @@ export interface YMaps3Namespace {
 
 declare global {
   interface Window {
+    ymaps?: YMaps2Namespace;
     ymaps3?: YMaps3Namespace;
   }
+  const ymaps: YMaps2Namespace | undefined;
   const ymaps3: YMaps3Namespace | undefined;
 }
 
