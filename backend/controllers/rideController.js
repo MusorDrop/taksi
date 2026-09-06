@@ -221,6 +221,8 @@ function mapRideRow(row) {
         parent_ride_id: row.parent_ride_id || null,
         driver_avatar_url: row.driver_avatar_url || null,
         departure_time: row.departure_time,
+        start_address: row.start_address || null,
+        end_address: row.end_address || null,
         start_coords: { lon: Number(row.start_lon), lat: Number(row.start_lat) },
         end_coords: { lon: Number(row.end_lon), lat: Number(row.end_lat) },
         start_lon: Number(row.start_lon),
@@ -400,7 +402,9 @@ async function createRide(req, res) {
                 duration_seconds,
                 route_polyline,
                 description,
-                tags
+                tags,
+                start_address,
+                end_address
             ) VALUES (
                 $1,
                 $2,
@@ -417,7 +421,9 @@ async function createRide(req, res) {
                 $14,
                 $15,
                 $16,
-                $17
+                $17,
+                $18,
+                $19
             )
             RETURNING 
                 id,
@@ -425,6 +431,8 @@ async function createRide(req, res) {
                 vehicle_id,
                 parent_ride_id,
                 departure_time,
+                start_address,
+                end_address,
                 ST_X(start_point) as start_lon,
                 ST_Y(start_point) as start_lat,
                 ST_X(end_point) as end_lon,
@@ -461,7 +469,9 @@ async function createRide(req, res) {
             routeData.duration_seconds,
             JSON.stringify(routeData.route_polyline),
             description,
-            tags
+            tags,
+            startCoords.name,
+            endCoords.name
         ]);
 
         await client.query('COMMIT');
@@ -595,6 +605,8 @@ async function getRides(req, res) {
             v.license_plate as vehicle_license_plate,
             v.seats as vehicle_seats,
             r.departure_time,
+            r.start_address,
+            r.end_address,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,
             ST_X(r.end_point) as end_lon,
@@ -899,6 +911,8 @@ async function updateRide(req, res) {
         let startLat = currentRide.start_lat;
         let endLon = currentRide.end_lon;
         let endLat = currentRide.end_lat;
+        let startAddress = currentRide.start_address;
+        let endAddress = currentRide.end_address;
         let coordsChanged = false;
 
         const rawStart = req.body.start_point || req.body.from || (
@@ -907,9 +921,16 @@ async function updateRide(req, res) {
                 : null
         );
         if (rawStart) {
-            const resolvedStart = resolvePointCoordinates(rawStart, { lon: startLon, lat: startLat });
+            let resolvedStart;
+            if (typeof rawStart === 'string') {
+                const geocoded = await yandexMaps.geocodeAddress(rawStart);
+                resolvedStart = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+            } else {
+                resolvedStart = resolvePointCoordinates(rawStart, { lon: startLon, lat: startLat });
+            }
             startLon = resolvedStart.lon;
             startLat = resolvedStart.lat;
+            startAddress = resolvedStart.name || (typeof rawStart === 'string' ? rawStart : null);
             coordsChanged = true;
         }
 
@@ -919,10 +940,24 @@ async function updateRide(req, res) {
                 : null
         );
         if (rawEnd) {
-            const resolvedEnd = resolvePointCoordinates(rawEnd, { lon: endLon, lat: endLat });
+            let resolvedEnd;
+            if (typeof rawEnd === 'string') {
+                const geocoded = await yandexMaps.geocodeAddress(rawEnd);
+                resolvedEnd = { lon: geocoded.longitude, lat: geocoded.latitude, name: geocoded.full_address };
+            } else {
+                resolvedEnd = resolvePointCoordinates(rawEnd, { lon: endLon, lat: endLat });
+            }
             endLon = resolvedEnd.lon;
             endLat = resolvedEnd.lat;
+            endAddress = resolvedEnd.name || (typeof rawEnd === 'string' ? rawEnd : null);
             coordsChanged = true;
+        }
+
+        if (req.body.start_address !== undefined) {
+            startAddress = req.body.start_address;
+        }
+        if (req.body.end_address !== undefined) {
+            endAddress = req.body.end_address;
         }
 
         if (coordsChanged && startLon === endLon && startLat === endLat) {
@@ -1032,14 +1067,18 @@ async function updateRide(req, res) {
                 ride_type = $10,
                 regular_days = $11,
                 description = $12,
-                tags = $13
-            WHERE id = $14
+                tags = $13,
+                start_address = $14,
+                end_address = $15
+            WHERE id = $16
             RETURNING 
                 id,
                 driver_id,
                 vehicle_id,
                 parent_ride_id,
                 departure_time,
+                start_address,
+                end_address,
                 ST_X(start_point) as start_lon,
                 ST_Y(start_point) as start_lat,
                 ST_X(end_point) as end_lon,
@@ -1073,6 +1112,8 @@ async function updateRide(req, res) {
             regularDays,
             description,
             tags,
+            startAddress,
+            endAddress,
             rideId
         ]);
 
@@ -1208,6 +1249,8 @@ async function getRideById(req, res) {
                 r.vehicle_id,
                 r.parent_ride_id,
                 r.departure_time,
+                r.start_address,
+                r.end_address,
                 ST_X(r.start_point) AS start_lon,
                 ST_Y(r.start_point) AS start_lat,
                 ST_X(r.end_point) AS end_lon,
@@ -1523,7 +1566,8 @@ async function startRide(req, res) {
                     driver_id, vehicle_id, parent_ride_id, departure_time,
                     start_point, end_point, route_line, total_seats, available_seats,
                     status, base_price, ride_type, regular_days, distance_meters,
-                    duration_seconds, route_polyline, description, tags
+                    duration_seconds, route_polyline, description, tags,
+                    start_address, end_address
                 )
                 VALUES (
                     $1, $2, $3, CURRENT_TIMESTAMP,
@@ -1531,7 +1575,8 @@ async function startRide(req, res) {
                     ST_SetSRID(ST_MakePoint($6, $7), 4326),
                     $8, $9, $10,
                     'active', $11, 'one_off', $12, $13,
-                    $14, $15, $16, $17
+                    $14, $15, $16, $17,
+                    $18, $19
                 )
                 RETURNING id
             `;
@@ -1552,7 +1597,9 @@ async function startRide(req, res) {
                 currentRide.duration_seconds,
                 JSON.stringify(currentRide.route_polyline),
                 currentRide.description,
-                currentRide.tags || []
+                currentRide.tags || [],
+                currentRide.start_address || null,
+                currentRide.end_address || null
             ]);
             const instanceRideId = copyRes.rows[0].id;
 
@@ -1579,6 +1626,7 @@ async function startRide(req, res) {
 
             const fullRes = await pool.query(`
                 SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                       r.start_address, r.end_address,
                        u.username as driver_username, u.first_name as driver_first_name,
                        u.last_name as driver_last_name, u.phone as driver_phone,
                        u.rating as driver_rating, u.avatar_url as driver_avatar_url,
@@ -1612,6 +1660,7 @@ async function startRide(req, res) {
 
         const fullRes = await pool.query(`
             SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                   r.start_address, r.end_address,
                    u.username as driver_username, u.first_name as driver_first_name,
                    u.last_name as driver_last_name, u.phone as driver_phone,
                    u.rating as driver_rating, u.avatar_url as driver_avatar_url,
@@ -1709,6 +1758,7 @@ async function finishRide(req, res) {
 
         const fullRes = await pool.query(`
             SELECT r.id, r.driver_id, r.vehicle_id, r.parent_ride_id, r.description, r.tags,
+                   r.start_address, r.end_address,
                    u.username as driver_username, u.first_name as driver_first_name,
                    u.last_name as driver_last_name, u.phone as driver_phone,
                    u.rating as driver_rating, u.avatar_url as driver_avatar_url,
@@ -1783,6 +1833,8 @@ async function getMyRides(req, res) {
             v.license_plate as vehicle_license_plate,
             v.seats as vehicle_seats,
             r.departure_time,
+            r.start_address,
+            r.end_address,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,
             ST_X(r.end_point) as end_lon,

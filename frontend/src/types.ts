@@ -164,6 +164,8 @@ export interface BackendRide {
   description?: string | null;
   tags?: string[];
   departure_time: string;
+  start_address?: string;
+  end_address?: string;
   start_coords?: { lon: number; lat: number };
   end_coords?: { lon: number; lat: number };
   start_lon?: number;
