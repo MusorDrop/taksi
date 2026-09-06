@@ -33,6 +33,7 @@ import { api } from '../api';
 /**
  * Получение текущей даты в формате YYYY-MM-DD для поля ввода даты
  */
+
 function getTodayDateString(): string {
   const now = new Date();
   const year = now.getFullYear();
