@@ -362,7 +362,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
           <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
             {/* Контейнер интерактивной карты с предотвращением всплытия событий к родительской карточке */}
             <Box
-              sx={{ mb: 2 }}
+              sx={{ mb: 2, width: '100%' }}
               onClick={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
               onMouseDown={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
               onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
@@ -382,6 +382,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                 onMouseUp={(e: React.MouseEvent<HTMLDivElement>): void => e.stopPropagation()}
                 onPointerDown={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
                 onPointerUp={(e: React.PointerEvent<HTMLDivElement>): void => e.stopPropagation()}
+                sx={{ width: '100%', m: 0, p: 0 }}
               >
                 <RouteMap
                   from={ride.from}
@@ -399,7 +400,7 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                   }
                   distanceKm={ride.distanceKm}
                   durationMin={ride.durationMin}
-                  height={170}
+                  height={280}
                 />
               </Box>
             </Box>
