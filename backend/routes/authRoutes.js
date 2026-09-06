@@ -12,7 +12,7 @@ const authLimiter = process.env.NODE_ENV === 'test'
     ? (req, res, next) => next()
     : rateLimit({
         windowMs: 15 * 60 * 1000,
-        max: 5,
+        max: 100,
         message: {
             error: 'Слишком много попыток входа или регистрации. Пожалуйста, повторите попытку через 15 минут.'
         },

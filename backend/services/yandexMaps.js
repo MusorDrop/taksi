@@ -327,18 +327,40 @@ async function buildRoute(startCoords, endCoords) {
                 const data = await response.json();
                 const route = data?.route;
                 if (route) {
-                    const meters = Math.round(route.summary?.length ?? route.legs?.[0]?.length ?? 0);
-                    const seconds = Math.round(route.summary?.duration?.value ?? route.summary?.duration ?? 0);
-                    return {
-                        distance_meters: meters,
-                        duration_seconds: seconds,
-                        distance_km: Math.round((meters / 1000) * 100) / 100,
-                        duration_minutes: Math.round(seconds / 60),
-                        route_polyline: route.geometry || {
-                            type: 'LineString',
-                            coordinates: [[startLon, startLat], [endLon, endLat]]
+                    let meters = 0;
+                    let seconds = 0;
+                    const allPoints = [];
+                    if (Array.isArray(route.legs)) {
+                        for (const leg of route.legs) {
+                            if (Array.isArray(leg.steps)) {
+                                for (const step of leg.steps) {
+                                    meters += Number(step.length || 0);
+                                    seconds += Number(step.duration || 0);
+                                    if (Array.isArray(step.polyline?.points)) {
+                                        for (const pt of step.polyline.points) {
+                                            allPoints.push([pt[1], pt[0]]);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    };
+                    }
+                    if (meters === 0) {
+                        meters = Math.round(route.summary?.length ?? route.legs?.[0]?.length ?? 0);
+                        seconds = Math.round(route.summary?.duration?.value ?? route.summary?.duration ?? 0);
+                    }
+                    if (meters > 0) {
+                        return {
+                            distance_meters: Math.round(meters),
+                            duration_seconds: Math.round(seconds),
+                            distance_km: Math.round((meters / 1000) * 100) / 100,
+                            duration_minutes: Math.round(seconds / 60),
+                            route_polyline: {
+                                type: 'LineString',
+                                coordinates: allPoints.length > 0 ? allPoints : [[startLon, startLat], [endLon, endLat]]
+                            }
+                        };
+                    }
                 }
             }
         } catch (err) {
