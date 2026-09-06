@@ -156,7 +156,14 @@ function AppContent() {
 function ThemeModeProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<PaletteMode>(() => {
     try {
-      return localStorage.getItem('theme-mode') === 'dark' ? 'dark' : 'light';
+      const savedMode = localStorage.getItem('theme-mode');
+      // Если у пользователя уже сохранена тема в localStorage, используем её
+      if (savedMode === 'dark' || savedMode === 'light') {
+        return savedMode;
+      }
+      // При первом заходе по умолчанию всегда устанавливаем светлую тему ('light'),
+      // игнорируя системные предпочтения prefers-color-scheme (даже если dark)
+      return 'light';
     } catch {
       return 'light';
     }
