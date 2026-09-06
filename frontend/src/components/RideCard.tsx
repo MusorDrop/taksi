@@ -26,7 +26,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import EventIcon from '@mui/icons-material/Event';
-import BoltIcon from '@mui/icons-material/Bolt';
 import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
 import PhoneIcon from '@mui/icons-material/Phone';
@@ -622,15 +621,6 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               label={regularLabel}
               color="secondary"
               variant="outlined"
-              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
-            />
-          )}
-          {ride.isPeak && (
-            <Chip
-              size="small"
-              icon={<BoltIcon sx={{ fontSize: 14 }} />}
-              label="+30% Пиковый спрос"
-              color="warning"
               sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
