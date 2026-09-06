@@ -15,6 +15,7 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import Autocomplete from '@mui/material/Autocomplete';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import SendIcon from '@mui/icons-material/Send';
@@ -29,6 +30,160 @@ import { useApp } from '../AppContext';
 import type { Vehicle, VehiclesResponse, RoutePreviewResponse } from '../types';
 import { formatDateString, formatPrice } from '../utils';
 import { api } from '../api';
+
+/**
+ * Опция подсказки адреса для выпадающего списка Autocomplete
+ */
+export interface AddressOption {
+  label: string;
+  value: string;
+  subtitle?: string;
+}
+
+interface SuggestApiResponseItem {
+  title?: string | { text?: string };
+  subtitle?: string | { text?: string };
+  full_address?: string;
+  address?: string;
+  value?: string;
+  displayName?: string;
+}
+
+interface SuggestApiResponse {
+  suggestions?: SuggestApiResponseItem[];
+  results?: SuggestApiResponseItem[];
+}
+
+/**
+ * Ожидание готовности Yandex Maps API 2.1 в объекте window
+ */
+function getReadyYmaps(): Promise<Window['ymaps'] | null> {
+  if (typeof window === 'undefined') {
+    return Promise.resolve(null);
+  }
+  const ym = window.ymaps;
+  if (!ym) {
+    return Promise.resolve(null);
+  }
+  if (typeof ym.suggest === 'function') {
+    return Promise.resolve(ym);
+  }
+  if (typeof ym.ready === 'function') {
+    return new Promise((resolve) => {
+      ym.ready(() => {
+        resolve(window.ymaps ?? null);
+      });
+    });
+  }
+  return Promise.resolve(ym);
+}
+
+/**
+ * Преобразование элемента ответа Yandex Suggest API в стандартизированный AddressOption
+ */
+function parseSuggestItem(item: unknown): AddressOption | null {
+  if (typeof item === 'string') {
+    const trimmed = item.trim();
+    if (!trimmed) return null;
+    return { label: trimmed, value: trimmed };
+  }
+
+  if (item && typeof item === 'object') {
+    const obj = item as Record<string, unknown>;
+    const value = typeof obj.value === 'string' ? obj.value.trim() : '';
+    const displayName = typeof obj.displayName === 'string' ? obj.displayName.trim() : '';
+    const fullAddress = typeof obj.full_address === 'string' ? obj.full_address.trim() : '';
+    const address = typeof obj.address === 'string' ? obj.address.trim() : '';
+
+    let title = '';
+    if (typeof obj.title === 'string') {
+      title = obj.title.trim();
+    } else if (obj.title && typeof obj.title === 'object' && 'text' in obj.title) {
+      const textVal = (obj.title as { text?: unknown }).text;
+      if (typeof textVal === 'string') {
+        title = textVal.trim();
+      }
+    }
+
+    let subtitle = '';
+    if (typeof obj.subtitle === 'string') {
+      subtitle = obj.subtitle.trim();
+    } else if (obj.subtitle && typeof obj.subtitle === 'object' && 'text' in obj.subtitle) {
+      const textVal = (obj.subtitle as { text?: unknown }).text;
+      if (typeof textVal === 'string') {
+        subtitle = textVal.trim();
+      }
+    }
+
+    const resolvedValue = value || fullAddress || address || displayName || title;
+    const resolvedLabel = displayName || title || fullAddress || address || value;
+
+    if (!resolvedValue) return null;
+
+    return {
+      label: resolvedLabel,
+      value: resolvedValue,
+      subtitle: subtitle || undefined,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Запрос подсказок адресов через window.ymaps.suggest (API 2.1) или резервный бэкенд /api/suggest
+ */
+async function fetchAddressSuggestions(query: string, signal?: AbortSignal): Promise<AddressOption[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) {
+    return [];
+  }
+
+  // 1. Проверяем клиентский API 2.1 Яндекс.Карт (window.ymaps)
+  const ymaps2 = await getReadyYmaps();
+  if (ymaps2 && typeof ymaps2.suggest === 'function') {
+    try {
+      const results = await ymaps2.suggest(trimmed, { results: 7 });
+      if (Array.isArray(results) && results.length > 0) {
+        const options: AddressOption[] = [];
+        for (const item of results) {
+          const parsed = parseSuggestItem(item);
+          if (parsed && !options.some((opt) => opt.value === parsed.value)) {
+            options.push(parsed);
+          }
+        }
+        if (options.length > 0) {
+          return options;
+        }
+      }
+    } catch (err: unknown) {
+      console.warn('Ошибка вызова window.ymaps.suggest:', err);
+    }
+  }
+
+  // 2. Резервный запрос к бэкенду /api/suggest
+  try {
+    const res = await api.get<SuggestApiResponse | SuggestApiResponseItem[]>(
+      `/api/suggest?text=${encodeURIComponent(trimmed)}`,
+      { signal }
+    );
+    if (res) {
+      const list = Array.isArray(res) ? res : (res.suggestions || res.results || []);
+      const options: AddressOption[] = [];
+      for (const item of list) {
+        const parsed = parseSuggestItem(item);
+        if (parsed && !options.some((opt) => opt.value === parsed.value)) {
+          options.push(parsed);
+        }
+      }
+      return options;
+    }
+  } catch {
+    // При недоступности бэкенда или отмене запроса возвращаем пустой список
+  }
+
+  return [];
+}
 
 /**
  * Получение текущей даты в формате YYYY-MM-DD для поля ввода даты
@@ -86,6 +241,12 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
   const { addRide, user } = useApp();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [fromInputValue, setFromInputValue] = useState<string>('');
+  const [toInputValue, setToInputValue] = useState<string>('');
+  const [fromOptions, setFromOptions] = useState<AddressOption[]>([]);
+  const [toOptions, setToOptions] = useState<AddressOption[]>([]);
+  const [isFromLoading, setIsFromLoading] = useState<boolean>(false);
+  const [isToLoading, setIsToLoading] = useState<boolean>(false);
   const [rideType, setRideType] = useState<'one_off' | 'regular'>('one_off');
   const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
   const [date, setDate] = useState<string>(getDefaultDateString);
@@ -150,6 +311,92 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
   const [recommendedPrice, setRecommendedPrice] = useState<number>(150);
   const [isPeakDemand, setIsPeakDemand] = useState<boolean>(false);
   const [isRouteLoading, setIsRouteLoading] = useState<boolean>(false);
+
+  // Загрузка подсказок адресов для поля 'Откуда'
+  useEffect(() => {
+    const trimmed = fromInputValue.trim();
+    if (trimmed.length < 2) {
+      setFromOptions([]);
+      setIsFromLoading(false);
+      return;
+    }
+
+    // Если значение в поле совпадает с уже выбранным адресом, повторный поиск не выполняется
+    if (trimmed === from.trim() && from.trim().length > 0) {
+      setIsFromLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    const controller = new AbortController();
+    setIsFromLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await fetchAddressSuggestions(trimmed, controller.signal);
+        if (isMounted) {
+          setFromOptions(results);
+        }
+      } catch {
+        if (isMounted) {
+          setFromOptions([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsFromLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [fromInputValue, from]);
+
+  // Загрузка подсказок адресов для поля 'Куда'
+  useEffect(() => {
+    const trimmed = toInputValue.trim();
+    if (trimmed.length < 2) {
+      setToOptions([]);
+      setIsToLoading(false);
+      return;
+    }
+
+    // Если значение в поле совпадает с уже выбранным адресом, повторный поиск не выполняется
+    if (trimmed === to.trim() && to.trim().length > 0) {
+      setIsToLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    const controller = new AbortController();
+    setIsToLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await fetchAddressSuggestions(trimmed, controller.signal);
+        if (isMounted) {
+          setToOptions(results);
+        }
+      } catch {
+        if (isMounted) {
+          setToOptions([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsToLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [toInputValue, to]);
 
   // Запрос реального дорожного маршрута, полилинии и расчетной цены от бэкенда
   useEffect(() => {
@@ -236,6 +483,52 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
     time
   );
 
+  const handleFromChange = (
+    _event: unknown,
+    newValue: string | AddressOption | null,
+  ): void => {
+    if (!newValue) {
+      setFrom('');
+      setFromInputValue('');
+      setFromOptions([]);
+      return;
+    }
+    const val = typeof newValue === 'string' ? newValue.trim() : newValue.value.trim();
+    const label = typeof newValue === 'string' ? newValue.trim() : (newValue.label || newValue.value).trim();
+    setFrom(val);
+    setFromInputValue(label);
+  };
+
+  const handleFromBlur = (): void => {
+    const trimmed = fromInputValue.trim();
+    if (trimmed !== from) {
+      setFrom(trimmed);
+    }
+  };
+
+  const handleToChange = (
+    _event: unknown,
+    newValue: string | AddressOption | null,
+  ): void => {
+    if (!newValue) {
+      setTo('');
+      setToInputValue('');
+      setToOptions([]);
+      return;
+    }
+    const val = typeof newValue === 'string' ? newValue.trim() : newValue.value.trim();
+    const label = typeof newValue === 'string' ? newValue.trim() : (newValue.label || newValue.value).trim();
+    setTo(val);
+    setToInputValue(label);
+  };
+
+  const handleToBlur = (): void => {
+    const trimmed = toInputValue.trim();
+    if (trimmed !== to) {
+      setTo(trimmed);
+    }
+  };
+
   const handleApplyRecommendation = (): void => {
     setPrice(String(recommendedPrice));
   };
@@ -284,6 +577,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
       setSuccess(true);
       setFrom('');
       setTo('');
+      setFromInputValue('');
+      setToInputValue('');
+      setFromOptions([]);
+      setToOptions([]);
       setDate(getDefaultDateString());
       setTime(getDefaultTimeString());
       setPrice('');
@@ -350,38 +647,175 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
 
       <Box component="form" onSubmit={handleSubmit}>
         <Stack spacing={2}>
-          <TextField
-            fullWidth
-            label="Откуда (Точка А)"
-            placeholder="Например: Центральная библиотека"
-            value={from}
+          {/* Поле выбора начальной точки отправления (Откуда) с автодополнением */}
+          <Autocomplete<AddressOption | string, false, false, true>
+            freeSolo
             disabled={hasNoVehicles}
-            onChange={(e) => setFrom(e.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main' }} />
-                  </InputAdornment>
-                ),
-              },
+            options={fromOptions}
+            loading={isFromLoading}
+            filterOptions={(x) => x}
+            value={from || null}
+            inputValue={fromInputValue}
+            onInputChange={(_event, newInputValue, reason) => {
+              setFromInputValue(newInputValue);
+              if (reason === 'clear') {
+                setFrom('');
+                setFromOptions([]);
+              }
+            }}
+            onChange={handleFromChange}
+            onBlur={handleFromBlur}
+            getOptionLabel={(option) =>
+              typeof option === 'string' ? option : option.label || option.value || ''
+            }
+            isOptionEqualToValue={(option, val) => {
+              const optVal = typeof option === 'string' ? option : option.value;
+              const targetVal = typeof val === 'string' ? val : val.value;
+              return (
+                optVal === targetVal ||
+                (typeof option !== 'string' && option.label === targetVal)
+              );
+            }}
+            noOptionsText={
+              fromInputValue.trim().length < 2
+                ? 'Введите не менее 2 символов'
+                : 'Адрес не найден'
+            }
+            loadingText="Поиск адресов..."
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                fullWidth
+                label="Откуда (Точка А)"
+                placeholder="Например: Центральная библиотека"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <InputAdornment position="start">
+                        <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+                      </InputAdornment>
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                  endAdornment: (
+                    <>
+                      {isFromLoading ? (
+                        <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
+                      ) : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
+            renderOption={(props, option) => {
+              const { key, ...optionProps } = props;
+              const addressText = typeof option === 'string' ? option : option.label;
+              const subtitleText = typeof option === 'string' ? undefined : option.subtitle;
+              return (
+                <Box component="li" key={key} {...optionProps}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%', py: 0.5 }}>
+                    <LocationOnIcon sx={{ fontSize: 20, color: 'primary.main', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+                        {addressText}
+                      </Typography>
+                      {subtitleText && (
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                          {subtitleText}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+              );
             }}
           />
-          <TextField
-            fullWidth
-            label="Куда (Точка Б)"
-            placeholder="Например: Северный кампус"
-            value={to}
+
+          {/* Поле выбора конечной точки назначения (Куда) с автодополнением */}
+          <Autocomplete<AddressOption | string, false, false, true>
+            freeSolo
             disabled={hasNoVehicles}
-            onChange={(e) => setTo(e.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <LocationOnIcon sx={{ fontSize: 20, color: 'error.main' }} />
-                  </InputAdornment>
-                ),
-              },
+            options={toOptions}
+            loading={isToLoading}
+            filterOptions={(x) => x}
+            value={to || null}
+            inputValue={toInputValue}
+            onInputChange={(_event, newInputValue, reason) => {
+              setToInputValue(newInputValue);
+              if (reason === 'clear') {
+                setTo('');
+                setToOptions([]);
+              }
+            }}
+            onChange={handleToChange}
+            onBlur={handleToBlur}
+            getOptionLabel={(option) =>
+              typeof option === 'string' ? option : option.label || option.value || ''
+            }
+            isOptionEqualToValue={(option, val) => {
+              const optVal = typeof option === 'string' ? option : option.value;
+              const targetVal = typeof val === 'string' ? val : val.value;
+              return (
+                optVal === targetVal ||
+                (typeof option !== 'string' && option.label === targetVal)
+              );
+            }}
+            noOptionsText={
+              toInputValue.trim().length < 2
+                ? 'Введите не менее 2 символов'
+                : 'Адрес не найден'
+            }
+            loadingText="Поиск адресов..."
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                fullWidth
+                label="Куда (Точка Б)"
+                placeholder="Например: Северный кампус"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <InputAdornment position="start">
+                        <LocationOnIcon sx={{ fontSize: 20, color: 'error.main' }} />
+                      </InputAdornment>
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                  endAdornment: (
+                    <>
+                      {isToLoading ? (
+                        <CircularProgress color="inherit" size={18} sx={{ mr: 1 }} />
+                      ) : null}
+                      {params.InputProps.endAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
+            renderOption={(props, option) => {
+              const { key, ...optionProps } = props;
+              const addressText = typeof option === 'string' ? option : option.label;
+              const subtitleText = typeof option === 'string' ? undefined : option.subtitle;
+              return (
+                <Box component="li" key={key} {...optionProps}>
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%', py: 0.5 }}>
+                    <LocationOnIcon sx={{ fontSize: 20, color: 'error.main', flexShrink: 0 }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>
+                        {addressText}
+                      </Typography>
+                      {subtitleText && (
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                          {subtitleText}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+              );
             }}
           />
 

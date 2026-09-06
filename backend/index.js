@@ -38,6 +38,20 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
+const yandexMaps = require('./services/yandexMaps');
+
+// Получение подсказок адресов через Yandex Suggest API
+app.get('/api/suggest', async (req, res) => {
+    try {
+        const text = req.query.text || req.query.query || '';
+        const suggestions = await yandexMaps.suggestAddress(String(text));
+        res.json({ suggestions });
+    } catch (err) {
+        console.warn('Ошибка получения подсказок адресов:', err);
+        res.status(500).json({ error: 'Ошибка получения подсказок адресов' });
+    }
+});
+
 // Подключение роутов
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
