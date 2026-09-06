@@ -324,29 +324,20 @@ function resolveDateString(dateStr) {
 /**
  * Стандартизация времени отправления в формате HH:mm
  * @param {string|null} timeStr - Исходная строка времени
- * @returns {string|null}
+ * @returns {string|null} Время в формате HH:mm либо null
  */
 function resolveTimeString(timeStr) {
     if (!timeStr || typeof timeStr !== 'string') {
         return null;
     }
     const trimmed = timeStr.trim();
-    const match = trimmed.match(/(\d{1,2})[:.](\d{2})/);
-    if (match) {
-        const hours = match[1].padStart(2, '0');
-        const mins = match[2];
-        return `${hours}:${mins}`;
-    }
-
-    const singleHourMatch = trimmed.match(/^(\d{1,2})(?:\s*(?:ч|час|часов|утра|вечера|дня))?$/i);
-    if (singleHourMatch) {
-        const h = parseInt(singleHourMatch[1], 10);
-        if (h >= 0 && h <= 23) {
-            return `${String(h).padStart(2, '0')}:00`;
-        }
+    if (!trimmed) {
+        return null;
     }
 
     const lower = trimmed.toLowerCase();
+
+    // Жесткая конвертация словесных обозначений времени суток
     if (lower.includes('утр')) {
         return '08:00';
     }
@@ -360,7 +351,29 @@ function resolveTimeString(timeStr) {
         return '23:00';
     }
 
-    return trimmed;
+    // Проверка явного формата HH:mm или H:mm
+    const match = trimmed.match(/(\d{1,2})[:.](\d{2})/);
+    if (match) {
+        const hours = parseInt(match[1], 10);
+        const mins = parseInt(match[2], 10);
+        if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59) {
+            return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        }
+        return null;
+    }
+
+    // Проверка одиночного указания часа
+    const singleHourMatch = trimmed.match(/^(\d{1,2})(?:\s*(?:ч|час|часов))?$/i);
+    if (singleHourMatch) {
+        const h = parseInt(singleHourMatch[1], 10);
+        if (h >= 0 && h <= 23) {
+            return `${String(h).padStart(2, '0')}:00`;
+        }
+        return null;
+    }
+
+    // Если строка содержит любые другие буквы или невалидный формат — возвращаем null
+    return null;
 }
 
 /**
@@ -375,7 +388,7 @@ function extractKeywordTags(sourceText) {
     const lower = sourceText.toLowerCase();
     const tags = [];
 
-    if (lower.includes('не кур') || lower.includes('без кур') || lower.includes('курить нельзя') || lower.includes('без сигарет')) {
+    if (lower.includes('не кур') || lower.includes('без кур') || lower.includes('курить нельзя') || lower.includes('без сигарет') || lower.includes('не курят')) {
         tags.push('Не курить');
     }
     if (lower.includes('пустой багажник')) {
@@ -386,10 +399,10 @@ function extractKeywordTags(sourceText) {
     if (lower.includes('музык')) {
         tags.push('С музыкой');
     }
-    if (lower.includes('тишин') || lower.includes('без музыки') || lower.includes('в тишине')) {
+    if (lower.includes('тишин') || lower.includes('без музыки') || lower.includes('в тишине') || lower.includes('тихо')) {
         tags.push('Тишина');
     }
-    if (lower.includes('чистый салон') || lower.includes('чисто в салон') || lower.includes('чистая машин') || lower.includes('чистый авто')) {
+    if (lower.includes('чист')) {
         tags.push('Чистый салон');
     }
     if (lower.includes('молч') || lower.includes('еду молча') || lower.includes('не разговар')) {
@@ -401,7 +414,7 @@ function extractKeywordTags(sourceText) {
     if (lower.includes('аккуратн')) {
         tags.push('Аккуратно вожу');
     }
-    if (lower.includes('кофе') || lower.includes('едой') || lower.includes('перекус')) {
+    if (lower.includes('кофе') || lower.includes('едой') || lower.includes('перекус') || lower.includes('кушать') || lower.includes('поесть')) {
         tags.push('Можно с кофе/едой');
     }
     if (lower.includes('без остановок') || lower.includes('без пересадок')) {
@@ -479,20 +492,46 @@ function normalizeTags(rawTags, comment, originalText) {
     const list = Array.isArray(rawTags) ? rawTags : [];
     const normalized = [];
 
-    for (const rawTag of list) {
-        if (typeof rawTag !== 'string') {
-            continue;
+    const processTagCandidate = (tagCandidate) => {
+        if (!tagCandidate || typeof tagCandidate !== 'string') {
+            return;
         }
-        const trimmed = rawTag.trim();
+        const trimmed = tagCandidate.trim();
         if (!trimmed) {
-            continue;
+            return;
         }
+        const lowerTag = trimmed.toLowerCase();
+
+        // Если строка от LLM содержит корень "чист", добавляем тег "Чистый салон"
+        if (lowerTag.includes('чист')) {
+            if (!normalized.includes('Чистый салон')) {
+                normalized.push('Чистый салон');
+            }
+        }
+
+        // Проверяем прямое совпадение со списком разрешенных тегов
         const matched = AVAILABLE_TAGS.find(
-            (item) => item.toLowerCase() === trimmed.toLowerCase()
+            (item) => item.toLowerCase() === lowerTag
         );
         if (matched && !normalized.includes(matched)) {
             normalized.push(matched);
         }
+
+        // Также проверяем совпадение по ключевым фразам
+        const keywordMatched = extractKeywordTags(trimmed);
+        for (const kw of keywordMatched) {
+            if (!normalized.includes(kw)) {
+                normalized.push(kw);
+            }
+        }
+    };
+
+    for (const rawTag of list) {
+        processTagCandidate(rawTag);
+    }
+
+    if (typeof rawTags === 'string') {
+        processTagCandidate(rawTags);
     }
 
     // Дополняем ключевыми тегами из текста комментария и запроса
