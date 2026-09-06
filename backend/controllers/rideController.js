@@ -182,10 +182,33 @@ function mapRideRow(row) {
         }
     }
 
+    const hasVehicleInfo = Boolean(
+        row.vehicle_id ||
+        row.brand ||
+        row.model ||
+        row.color ||
+        row.plate_number ||
+        row.vehicle_brand ||
+        row.vehicle_color ||
+        row.vehicle_license_plate
+    );
+
+    const vehicle = hasVehicleInfo ? {
+        brand: row.brand || row.vehicle_brand || null,
+        model: row.model || null,
+        color: row.color || row.vehicle_color || null,
+        plate_number: row.plate_number || row.vehicle_license_plate || row.license_plate || null
+    } : null;
+
     return {
         id: row.id,
         driver_id: row.driver_id,
         vehicle_id: row.vehicle_id || null,
+        vehicle: vehicle,
+        brand: vehicle?.brand || null,
+        model: vehicle?.model || null,
+        color: vehicle?.color || null,
+        plate_number: vehicle?.plate_number || null,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_username: row.driver_username || null,
         driver_phone: row.driver_phone || null,
@@ -567,6 +590,14 @@ async function getRides(req, res) {
                 FROM reviews rev
                 WHERE rev.reviewee_id = r.driver_id
             ) as driver_reviews_count,
+            v.brand,
+            NULL::text as model,
+            v.color,
+            v.license_plate as plate_number,
+            v.brand as vehicle_brand,
+            v.color as vehicle_color,
+            v.license_plate as vehicle_license_plate,
+            v.seats as vehicle_seats,
             r.departure_time,
             ST_X(r.start_point) as start_lon,
             ST_Y(r.start_point) as start_lat,
@@ -613,6 +644,7 @@ async function getRides(req, res) {
             ) AS passengers
         FROM rides r
         LEFT JOIN users u ON r.driver_id = u.id
+        LEFT JOIN vehicles v ON r.vehicle_id = v.id
         WHERE ${whereClause}
         ORDER BY r.departure_time ASC
         LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -1229,6 +1261,10 @@ async function getRideById(req, res) {
                     FROM reviews rev
                     WHERE rev.reviewee_id = r.driver_id
                 ) as driver_reviews_count,
+                v.brand,
+                NULL::text AS model,
+                v.color,
+                v.license_plate AS plate_number,
                 v.brand AS vehicle_brand,
                 v.color AS vehicle_color,
                 v.license_plate AS vehicle_license_plate,
@@ -1546,6 +1582,8 @@ async function startRide(req, res) {
                        u.last_name as driver_last_name, u.phone as driver_phone,
                        u.rating as driver_rating, u.avatar_url as driver_avatar_url,
                        (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                       v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                       v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
                        r.departure_time,
                        ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
                        ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
@@ -1557,6 +1595,7 @@ async function startRide(req, res) {
                        COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
                 FROM rides r
                 LEFT JOIN users u ON r.driver_id = u.id
+                LEFT JOIN vehicles v ON r.vehicle_id = v.id
                 WHERE r.id = $1
             `, [instanceRideId]);
 
@@ -1576,6 +1615,8 @@ async function startRide(req, res) {
                    u.last_name as driver_last_name, u.phone as driver_phone,
                    u.rating as driver_rating, u.avatar_url as driver_avatar_url,
                    (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                   v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                   v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
                    r.departure_time,
                    ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
                    ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
@@ -1587,6 +1628,7 @@ async function startRide(req, res) {
                    COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
             FROM rides r
             LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN vehicles v ON r.vehicle_id = v.id
             WHERE r.id = $1
         `, [rideId]);
 
@@ -1670,6 +1712,8 @@ async function finishRide(req, res) {
                    u.last_name as driver_last_name, u.phone as driver_phone,
                    u.rating as driver_rating, u.avatar_url as driver_avatar_url,
                    (SELECT COUNT(*)::int FROM reviews rev WHERE rev.reviewee_id = r.driver_id) as driver_reviews_count,
+                   v.brand, NULL::text as model, v.color, v.license_plate as plate_number,
+                   v.brand as vehicle_brand, v.color as vehicle_color, v.license_plate as vehicle_license_plate,
                    r.departure_time,
                    ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
                    ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat,
@@ -1681,6 +1725,7 @@ async function finishRide(req, res) {
                    COALESCE((SELECT json_agg(json_build_object('id', pu.id, 'name', COALESCE(pu.first_name, pu.username), 'username', pu.username, 'telegram', pu.username, 'phone', pu.phone, 'avatar_url', pu.avatar_url, 'selected_day', m.selected_day)) FROM matches m JOIN users pu ON m.passenger_id = pu.id WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')), '[]'::json) as passengers
             FROM rides r
             LEFT JOIN users u ON r.driver_id = u.id
+            LEFT JOIN vehicles v ON r.vehicle_id = v.id
             WHERE r.id = $1
         `, [rideId]);
 
@@ -1697,9 +1742,111 @@ async function finishRide(req, res) {
     }
 }
 
+/**
+ * Получение списка поездок текущего пользователя (в роли водителя или пассажира)
+ * GET /api/rides/my
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ */
+async function getMyRides(req, res) {
+    const userId = extractUserId(req);
+    if (!userId) {
+        return res.status(401).json({ error: 'Пользователь не авторизован' });
+    }
+
+    const selectQuery = `
+        SELECT 
+            r.id,
+            r.driver_id,
+            r.vehicle_id,
+            r.parent_ride_id,
+            r.description,
+            r.tags,
+            u.username as driver_username,
+            u.first_name as driver_first_name,
+            u.last_name as driver_last_name,
+            u.phone as driver_phone,
+            u.rating as driver_rating,
+            u.avatar_url as driver_avatar_url,
+            (
+                SELECT COUNT(*)::int
+                FROM reviews rev
+                WHERE rev.reviewee_id = r.driver_id
+            ) as driver_reviews_count,
+            v.brand,
+            NULL::text as model,
+            v.color,
+            v.license_plate as plate_number,
+            v.brand as vehicle_brand,
+            v.color as vehicle_color,
+            v.license_plate as vehicle_license_plate,
+            v.seats as vehicle_seats,
+            r.departure_time,
+            ST_X(r.start_point) as start_lon,
+            ST_Y(r.start_point) as start_lat,
+            ST_X(r.end_point) as end_lon,
+            ST_Y(r.end_point) as end_lat,
+            ROUND((ST_DistanceSphere(r.start_point, r.end_point) / 1000.0)::numeric, 2) as distance_km,
+            r.base_price,
+            r.total_seats,
+            r.available_seats,
+            r.status,
+            r.ride_type,
+            r.regular_days,
+            r.distance_meters,
+            r.duration_seconds,
+            r.route_polyline,
+            r.created_at,
+            COALESCE(
+                (
+                    SELECT array_agg(m.passenger_id::text)
+                    FROM matches m
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
+                ),
+                ARRAY[]::text[]
+            ) AS passenger_ids,
+            COALESCE(
+                (
+                    SELECT json_agg(
+                        json_build_object(
+                            'id', pu.id,
+                            'name', COALESCE(pu.first_name, pu.username),
+                            'username', pu.username,
+                            'telegram', pu.username,
+                            'phone', pu.phone,
+                            'avatar_url', pu.avatar_url,
+                            'selected_day', m.selected_day
+                        )
+                    )
+                    FROM matches m
+                    JOIN users pu ON m.passenger_id = pu.id
+                    WHERE m.ride_id = r.id AND m.status IN ('accepted', 'completed')
+                ),
+                '[]'::json
+            ) AS passengers
+        FROM rides r
+        LEFT JOIN users u ON r.driver_id = u.id
+        LEFT JOIN vehicles v ON r.vehicle_id = v.id
+        WHERE r.driver_id = $1 OR EXISTS (
+            SELECT 1 FROM matches m2 WHERE m2.ride_id = r.id AND m2.passenger_id = $1 AND m2.status IN ('accepted', 'completed')
+        )
+        ORDER BY r.departure_time DESC
+    `;
+
+    try {
+        const result = await pool.query(selectQuery, [userId]);
+        const rides = result.rows.map(mapRideRow);
+        return res.json({ count: rides.length, rides });
+    } catch (err) {
+        console.error('Ошибка получения списка поездок пользователя:', err);
+        return res.status(500).json({ error: 'Внутренняя ошибка сервера при получении списка поездок' });
+    }
+}
+
 module.exports = {
     createRide,
     getRides,
+    getMyRides,
     getRideById,
     getRoutePreview,
     deleteRide,

@@ -37,6 +37,7 @@ import RepeatIcon from '@mui/icons-material/Repeat';
 import GroupIcon from '@mui/icons-material/Group';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
 import { DAY_FULL, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { formatAvatarUrl } from '../utils';
 import { useApp } from '../AppContext';
@@ -98,11 +99,38 @@ interface RideCardProps {
 }
 
 export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide, joinRide, deleteRide, startRide, finishRide } = useApp();
+  const { kickPassenger, updateRide, joinRide, deleteRide, startRide, finishRide, user } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
   const [isReviewed, setIsReviewed] = useState<boolean>(false);
+
+  // Проверка: является ли текущий пользователь пассажиром поездки (включая passenger_ids)
+  const hasJoinedAsPassenger = Boolean(
+    isPassenger ||
+    (user && (
+      ride.passengerIds?.includes(user.id) ||
+      (ride as { passenger_ids?: string[] }).passenger_ids?.includes(user.id) ||
+      ride.passengers?.some((p) => p.id === user.id)
+    ))
+  );
+
+  // Гос. номер виден только водителю или присоединившимся пассажирам
+  const canSeePlateNumber = Boolean(isDriver || hasJoinedAsPassenger);
+
+  // Извлечение сведений об автомобиле
+  const vehicle = ride.vehicle;
+  const brand = vehicle?.brand || ride.vehicleBrand || ride.brand || null;
+  const model = vehicle?.model || ride.vehicleModel || ride.model || null;
+  const color = vehicle?.color || ride.vehicleColor || ride.color || null;
+  const plateNumber = vehicle?.plate_number || ride.vehiclePlateNumber || ride.plate_number || null;
+
+  // Форматированное название автомобиля (марка и модель без дублирования)
+  const carName = useMemo(() => {
+    if (!brand) return model || null;
+    if (!model) return brand;
+    return brand.toLowerCase().includes(model.toLowerCase()) ? brand : `${brand} ${model}`;
+  }, [brand, model]);
 
   // Старт и завершение поездки водителем
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
@@ -508,6 +536,73 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
               />
             ))}
           </Stack>
+        )}
+
+        {(carName || color) && (
+          <Box
+            sx={{
+              mt: 1.25,
+              p: 1.2,
+              borderRadius: 2.5,
+              bgcolor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(15, 23, 42, 0.025)',
+              border: '1px solid',
+              borderColor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.07)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1.5,
+            }}
+          >
+            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ minWidth: 0 }}>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 2,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)',
+                  color: 'primary.main',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <DirectionsCarIcon sx={{ fontSize: 18 }} />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 650, fontSize: '0.85rem' }} noWrap>
+                  {carName || 'Автомобиль'}
+                </Typography>
+                {color && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.75rem' }}>
+                    Цвет: {color}
+                  </Typography>
+                )}
+              </Box>
+            </Stack>
+
+            {canSeePlateNumber && plateNumber && (
+              <Chip
+                size="small"
+                label={plateNumber}
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.74rem',
+                  letterSpacing: '0.04em',
+                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? '#262626' : '#f8f9fa'),
+                  color: (theme) => (theme.palette.mode === 'dark' ? '#fff' : '#111827'),
+                  border: '1px solid',
+                  borderColor: (theme) => (theme.palette.mode === 'dark' ? '#525252' : '#cbd5e1'),
+                  borderRadius: 1.5,
+                  fontFamily: 'monospace',
+                  px: 0.5,
+                }}
+              />
+            )}
+          </Box>
         )}
 
         <Stack direction="row" spacing={0.6} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>

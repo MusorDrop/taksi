@@ -185,6 +185,25 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
       ? backendRide.driver_phone.replace('+', '')
       : (backendRide.driver_name ? backendRide.driver_name.toLowerCase().replace(/\s+/g, '') : 'campus_driver'));
 
+  const vehicleObj = backendRide.vehicle || (backendRide.brand || backendRide.model || backendRide.color || backendRide.plate_number || backendRide.vehicle_brand ? {
+    brand: backendRide.brand ?? backendRide.vehicle_brand ?? null,
+    model: backendRide.model ?? null,
+    color: backendRide.color ?? backendRide.vehicle_color ?? null,
+    plate_number: backendRide.plate_number ?? backendRide.vehicle_license_plate ?? null,
+  } : null);
+
+  const vehicleBrand = vehicleObj?.brand ?? backendRide.brand ?? backendRide.vehicle_brand ?? null;
+  const vehicleModel = vehicleObj?.model ?? backendRide.model ?? null;
+  const vehicleColor = vehicleObj?.color ?? backendRide.color ?? backendRide.vehicle_color ?? null;
+  const vehiclePlate = vehicleObj?.plate_number ?? backendRide.plate_number ?? backendRide.vehicle_license_plate ?? null;
+
+  const resolvedVehicle = (vehicleBrand || vehicleModel || vehicleColor || vehiclePlate) ? {
+    brand: vehicleBrand,
+    model: vehicleModel,
+    color: vehicleColor,
+    plate_number: vehiclePlate,
+  } : null;
+
   return {
     id: backendRide.id,
     driverId: backendRide.driver_id,
@@ -192,6 +211,15 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     driverUsername: backendRide.driver_username || null,
     driverPhone: backendRide.driver_phone || null,
     driverAvatarUrl: backendRide.driver_avatar_url || null,
+    vehicle: resolvedVehicle,
+    brand: vehicleBrand,
+    model: vehicleModel,
+    color: vehicleColor,
+    plate_number: vehiclePlate,
+    vehicleBrand,
+    vehicleModel,
+    vehicleColor,
+    vehiclePlateNumber: vehiclePlate,
     from: resolveCoordsToName(backendRide.start_lon, backendRide.start_lat, 'Уралмаш'),
     to: resolveCoordsToName(backendRide.end_lon, backendRide.end_lat, 'Кампус Новокольцовский'),
     dateFormatted: dateString,
