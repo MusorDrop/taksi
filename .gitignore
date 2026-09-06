@@ -1,7 +1,7 @@
 node_modules/
 .bolt/
 dist/
-dist-ssr/
+dist-ssr/ 
 
 # Environment files
 .env

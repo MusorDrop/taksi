@@ -6,5 +6,4 @@ start cmd /k "cd backend && npm run start"
 echo Запуск фронтенда (Vite)...
 start cmd /k "cd frontend && npm run dev"
 
-
 echo Серверы запущены!
