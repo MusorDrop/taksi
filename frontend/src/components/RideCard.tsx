@@ -667,6 +667,8 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                 width: '100%',
                 borderRadius: 3,
                 overflow: 'hidden',
+                transform: 'translateZ(0)',
+                WebkitMaskImage: '-webkit-radial-gradient(white, black)',
                 border: '1px solid',
                 borderColor: (theme) =>
                   theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
