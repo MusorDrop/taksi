@@ -263,7 +263,7 @@ async function getAccessToken() {
 }
 
 /**
- * Очистка строки ответа языковой модели от Markdown-оберток (```json ... ```)
+ * Очистка строки ответа языковой модели от Markdown-оберток (```json ... ```) и постороннего текста
  * @param {string} rawString - Необработанный строковый ответ модели
  * @returns {string} Очищенная JSON-строка
  */
@@ -271,10 +271,40 @@ function sanitizeJsonString(rawString) {
     if (!rawString || typeof rawString !== 'string') {
         return '{}';
     }
-    const trimmed = rawString.trim();
-    const cleanedLeading = trimmed.replace(/^```(?:json)?\s*/i, '');
-    const cleanedBoth = cleanedLeading.replace(/\s*```$/i, '');
-    return cleanedBoth.trim();
+
+    // Сначала ищем блок кода ```json ... ``` или ``` ... ```
+    const codeBlockMatch = rawString.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const candidate = codeBlockMatch ? codeBlockMatch[1] : rawString;
+
+    // Ищем первый символ '{' и последний символ '}' в полученном блоке
+    const firstBraceIndex = candidate.indexOf('{');
+    const lastBraceIndex = candidate.lastIndexOf('}');
+
+    if (firstBraceIndex !== -1 && lastBraceIndex >= firstBraceIndex) {
+        return candidate.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+    }
+
+    // Резервный поиск первого '{' и последнего '}' во всем исходном ответе модели
+    const rawFirstBrace = rawString.indexOf('{');
+    const rawLastBrace = rawString.lastIndexOf('}');
+    if (rawFirstBrace !== -1 && rawLastBrace >= rawFirstBrace) {
+        return rawString.slice(rawFirstBrace, rawLastBrace + 1).trim();
+    }
+
+    return candidate.trim() || '{}';
+}
+
+// Смещение часового пояса Екатеринбурга (UTC+5) в миллисекундах
+const EKATERINBURG_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+/**
+ * Получение даты в формате YYYY-MM-DD для часового пояса Екатеринбурга (UTC+5)
+ * @param {number} [dayOffset=0] - Смещение в днях (0 для сегодня, 1 для завтра, 2 для послезавтра)
+ * @returns {string} Дата в формате YYYY-MM-DD
+ */
+function getEkaterinburgDate(dayOffset = 0) {
+    const targetTimestamp = Date.now() + EKATERINBURG_OFFSET_MS + dayOffset * 24 * 60 * 60 * 1000;
+    return new Date(targetTimestamp).toISOString().split('T')[0];
 }
 
 /**
@@ -287,7 +317,6 @@ function resolveDateString(dateStr) {
         return null;
     }
     const lower = dateStr.toLowerCase().trim();
-    const now = new Date();
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(lower)) {
         return lower;
@@ -297,25 +326,24 @@ function resolveDateString(dateStr) {
     if (ddmmyyyy) {
         const day = ddmmyyyy[1].padStart(2, '0');
         const month = ddmmyyyy[2].padStart(2, '0');
-        const year = ddmmyyyy[3] || String(now.getFullYear());
+        const currentYear = new Date(Date.now() + EKATERINBURG_OFFSET_MS).getUTCFullYear();
+        const year = ddmmyyyy[3] || String(currentYear);
         return `${year}-${month}-${day}`;
     }
 
     if (lower.includes('послезавтра')) {
-        const target = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
-        return target.toISOString().split('T')[0];
+        return getEkaterinburgDate(2);
     }
     if (lower.includes('завтра')) {
-        const target = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        return target.toISOString().split('T')[0];
+        return getEkaterinburgDate(1);
     }
     if (lower.includes('сегодня')) {
-        return now.toISOString().split('T')[0];
+        return getEkaterinburgDate(0);
     }
 
-    // Если в дату ошибочно попало время суток, возвращаем сегодняшнюю дату
+    // Если в дату ошибочно попало время суток, возвращаем сегодняшнюю дату в Екатеринбурге
     if (lower.includes('утр') || lower.includes('дн') || lower.includes('вечер') || lower.includes('ноч')) {
-        return now.toISOString().split('T')[0];
+        return getEkaterinburgDate(0);
     }
 
     return dateStr;
@@ -689,5 +717,8 @@ module.exports = {
     parseRideRequest,
     getHttpsAgent,
     AVAILABLE_TAGS,
-    SYSTEM_PROMPT
+    SYSTEM_PROMPT,
+    sanitizeJsonString,
+    resolveDateString,
+    getEkaterinburgDate
 };
