@@ -4,7 +4,6 @@ import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
-import PlaceIcon from '@mui/icons-material/Place';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { useRouteMap, type UseRouteMapProps } from '../hooks/useRouteMap';
@@ -171,6 +170,8 @@ function RouteMapContent({
         minHeight: 250,
         borderRadius: 3,
         overflow: 'hidden',
+        transform: 'translateZ(0)',
+        WebkitMaskImage: '-webkit-radial-gradient(white, black)',
         background: 'linear-gradient(135deg, #e8eef5 0%, #d5dfe9 50%, #c3d2e3 100%)',
         border: '1px solid',
         borderColor: 'divider',
@@ -260,32 +261,6 @@ function RouteMapContent({
           )}
         </Box>
       )}
-
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          p: 1.2,
-          background: (theme) =>
-            theme.palette.mode === 'dark'
-              ? 'linear-gradient(to top, rgba(15, 23, 42, 0.95) 70%, transparent)'
-              : 'linear-gradient(to top, rgba(255, 255, 255, 0.95) 70%, transparent)',
-          zIndex: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          pointerEvents: 'none',
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-          <PlaceIcon sx={{ fontSize: 16, color: 'primary.main', flexShrink: 0 }} />
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
-            {from && to ? `${from} → ${to}` : 'Маршрут на Яндекс Картах'}
-          </Typography>
-        </Stack>
-      </Box>
     </Box>
   );
 }
