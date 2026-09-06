@@ -28,6 +28,10 @@ router.get('/', rideController.getRides);
 router.get('/route-preview', rideController.getRoutePreview);
 router.post('/route-preview', rideController.getRoutePreview);
 
+// Интеллектуальный парсинг параметров поездки из текста через GigaChat AI
+const aiController = require('../controllers/aiController');
+router.post('/parse', aiController.parseRide);
+
 // Получение списка поездок текущего пользователя
 router.get('/my', authenticateToken, rideController.getMyRides);
 router.get('/my-rides', authenticateToken, rideController.getMyRides);
