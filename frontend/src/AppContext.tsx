@@ -20,6 +20,7 @@ export interface AppContextValue {
   passengerRideIds: string[];
   joinRide: (rideId: string, selectedDay?: string) => Promise<void> | void;
   leaveRide: (rideId: string) => Promise<void> | void;
+  deleteRide: (rideId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -369,6 +370,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [user, fetchRides]);
 
+  const deleteRide = useCallback(
+    async (rideId: string): Promise<void> => {
+      setRides((prev) => prev.filter((r) => r.id !== rideId));
+      setPassengerRideIds((prev) => prev.filter((id) => id !== rideId));
+      try {
+        await api.delete('/api/rides/' + rideId);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Ошибка отмены поездки';
+        setRidesError(message);
+        fetchRides();
+        throw err;
+      }
+    },
+    [fetchRides],
+  );
+
   const contextValue = useMemo<AppContextValue>(
     () => ({
       user,
@@ -387,6 +404,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       passengerRideIds,
       joinRide,
       leaveRide,
+      deleteRide,
     }),
     [
       user,

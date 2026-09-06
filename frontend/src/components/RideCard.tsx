@@ -32,6 +32,7 @@ import SendIcon from '@mui/icons-material/Send';
 import StarIcon from '@mui/icons-material/Star';
 import PhoneIcon from '@mui/icons-material/Phone';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import GroupIcon from '@mui/icons-material/Group';
@@ -95,7 +96,7 @@ interface RideCardProps {
 }
 
 export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave }: RideCardProps) {
-  const { kickPassenger, updateRide, joinRide } = useApp();
+  const { kickPassenger, updateRide, joinRide, deleteRide } = useApp();
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [rating, setRating] = useState<number>(5);
@@ -123,6 +124,24 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
   const [editSeats, setEditSeats] = useState<string>(String(ride.totalSeats || 4));
   const [isUpdatingRide, setIsUpdatingRide] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+  // Отмена поездки водителем
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
+  const [isDeletingRide, setIsDeletingRide] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteRide = async (): Promise<void> => {
+    setIsDeletingRide(true);
+    setDeleteError(null);
+    try {
+      await deleteRide(ride.id);
+      setDeleteDialogOpen(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Не удалось отменить поездку';
+      setDeleteError(message);
+    } finally {
+      setIsDeletingRide(false);
+    }
+  };
 
   const isCompleted = ride.status === 'completed';
 
@@ -547,23 +566,38 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
                 </Button>
               )}
               {isDriver && (
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  size="small"
-                  startIcon={<EditIcon />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditFrom(ride.from);
-                    setEditTo(ride.to);
-                    setEditTime(ride.time);
-                    setEditPrice(String(ride.price));
-                    setEditSeats(String(ride.totalSeats || 4));
-                    setEditDialogOpen(true);
-                  }}
-                >
-                  Редактировать маршрут
-                </Button>
+                <Stack spacing={1} sx={{ width: '100%' }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="small"
+                    startIcon={<EditIcon />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditFrom(ride.from);
+                      setEditTo(ride.to);
+                      setEditTime(ride.time);
+                      setEditPrice(String(ride.price));
+                      setEditSeats(String(ride.totalSeats || 4));
+                      setEditDialogOpen(true);
+                    }}
+                  >
+                    Редактировать маршрут
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    startIcon={<DeleteOutlineIcon />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteDialogOpen(true);
+                    }}
+                  >
+                    Отменить поездку
+                  </Button>
+                </Stack>
               )}
               {!isDriver && (
                 <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
@@ -798,6 +832,41 @@ export default function RideCard({ ride, isPassenger, isDriver, onJoin, onLeave 
             startIcon={isJoining ? <CircularProgress size={16} color="inherit" /> : null}
           >
             {isJoining ? 'Подключение...' : 'Подтвердить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Модальное окно подтверждения отмены поездки водителем */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !isDeletingRide && setDeleteDialogOpen(false)}
+        onClick={(e) => e.stopPropagation()}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>Отменить поездку?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            Вы уверены, что хотите отменить поездку <strong>{ride.from}</strong> → <strong>{ride.to}</strong>? Она будет удалена из списка.
+          </Typography>
+          {deleteError && (
+            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={isDeletingRide} color="inherit">
+            Назад
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteRide}
+            disabled={isDeletingRide}
+            startIcon={isDeletingRide ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {isDeletingRide ? 'Удаление...' : 'Да, отменить поездку'}
           </Button>
         </DialogActions>
       </Dialog>
