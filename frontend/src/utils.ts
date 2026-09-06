@@ -216,6 +216,14 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     regularDays: backendRide.regular_days || null,
     regular_days: backendRide.regular_days || null,
     averageRating: backendRide.average_rating ? Number(backendRide.average_rating) : null,
+    startLon: backendRide.start_lon,
+    startLat: backendRide.start_lat,
+    endLon: backendRide.end_lon,
+    endLat: backendRide.end_lat,
+    startCoords: backendRide.start_coords,
+    endCoords: backendRide.end_coords,
+    polyline: backendRide.polyline,
+    durationMin: backendRide.duration_min,
   };
 }
 

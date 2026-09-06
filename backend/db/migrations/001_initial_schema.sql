@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS rides (
     base_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
     ride_type VARCHAR(20) DEFAULT 'one_off',
     regular_days VARCHAR(255),
+    distance_meters INT,
+    duration_seconds INT,
+    route_polyline JSONB,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_rides_available_seats CHECK (available_seats >= 0 AND available_seats <= total_seats),
     CONSTRAINT chk_rides_base_price CHECK (base_price >= 0)
@@ -101,6 +104,19 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id)
 );
+
+-- Таблица кэша геокодирования
+DROP TABLE IF EXISTS geocode_cache CASCADE;
+CREATE TABLE IF NOT EXISTS geocode_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    address_query TEXT NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    full_address TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_geocode_cache_address_query ON geocode_cache(address_query);
 
 -- Базовые индексы для ускорения поиска и гео-запросов
 CREATE INDEX IF NOT EXISTS idx_rides_driver_id ON rides(driver_id);
@@ -171,6 +187,25 @@ DO $$ BEGIN
     ALTER TABLE reviews ADD CONSTRAINT uq_reviews_ride_reviewer_reviewee UNIQUE (ride_id, reviewer_id, reviewee_id);
 EXCEPTION
     WHEN duplicate_object OR duplicate_table THEN null;
+END $$;
+
+-- Обеспечение наличия колонок для ранее созданной таблицы rides (идемпотентный ALTER)
+DO $$ BEGIN
+    ALTER TABLE rides ADD COLUMN IF NOT EXISTS distance_meters INT;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE rides ADD COLUMN IF NOT EXISTS duration_seconds INT;
+EXCEPTION
+    WHEN duplicate_column THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TABLE rides ADD COLUMN IF NOT EXISTS route_polyline JSONB;
+EXCEPTION
+    WHEN duplicate_column THEN null;
 END $$;
 
 
