@@ -31,6 +31,7 @@ import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
 import { DAY_KEYS, DAY_SHORT, type DayKey, type Ride } from '../types';
 import { getRideDayKey } from '../utils';
+import { AVAILABLE_TAGS } from '../hooks/useRideForm';
 
 export type SortOption = 'time' | 'price' | 'distance';
 
@@ -38,15 +39,6 @@ interface Coordinates {
   lat: number;
   lon: number;
 }
-
-const DEFAULT_FILTER_TAGS: readonly string[] = [
-  'С музыкой',
-  'Можно с багажом',
-  'Тихая поездка',
-  'Не курить',
-  'Чистый салон',
-  'Можно с животными',
-];
 
 /**
  * Извлекает начальные координаты поездки
@@ -239,20 +231,10 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
     return count;
   }, [sortBy, filterTwoSeats, filterTags]);
 
-  const availableFilterTags = useMemo<string[]>(() => {
-    const tagSet = new Set<string>(DEFAULT_FILTER_TAGS);
-    rides.forEach((ride) => {
-      if (Array.isArray(ride.tags)) {
-        ride.tags.forEach((tag) => {
-          const trimmed = tag.trim();
-          if (trimmed) {
-            tagSet.add(trimmed);
-          }
-        });
-      }
-    });
-    return Array.from(tagSet);
-  }, [rides]);
+  /**
+   * Доступные теги для фильтрации поездок (согласованы со списком тегов при создании)
+   */
+  const availableFilterTags = useMemo<string[]>(() => Array.from(AVAILABLE_TAGS), []);
 
   const filteredRides = useMemo(() => {
     let result = rides;
