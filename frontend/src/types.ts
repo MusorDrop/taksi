@@ -73,6 +73,12 @@ export interface Ride {
   regularDays?: string | null;
   regular_days?: string | null;
   averageRating?: number | null;
+  driverRating?: number | null;
+  driver_rating?: number | null;
+  driverReviewsCount?: number;
+  driver_reviews_count?: number;
+  description?: string | null;
+  tags?: string[];
   driverAvatarUrl?: string | null;
   startLon?: number;
   startLat?: number;
@@ -124,8 +130,11 @@ export interface BackendRide {
   driver_username?: string | null;
   driver_phone?: string | null;
   driver_rating?: number | null;
+  driver_reviews_count?: number;
   average_rating?: number | string | null;
   driver_avatar_url?: string | null;
+  description?: string | null;
+  tags?: string[];
   departure_time: string;
   start_coords?: { lon: number; lat: number };
   end_coords?: { lon: number; lat: number };
@@ -214,6 +223,8 @@ export interface Review {
   reviewee_id: string;
   rating: number;
   comment?: string | null;
+  reviewer_username?: string | null;
+  reviewer_first_name?: string | null;
   created_at?: string;
 }
 

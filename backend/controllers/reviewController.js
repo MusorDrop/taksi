@@ -193,7 +193,8 @@ async function createReview(req, res) {
  * @param {import('express').Response} res - Ответ Express
  */
 async function getReviews(req, res) {
-    const { user_id, ride_id } = req.query;
+    const userId = req.query.reviewee_id || req.query.user_id;
+    const { ride_id } = req.query;
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -210,11 +211,11 @@ async function getReviews(req, res) {
         const conditions = [];
         const params = [];
 
-        if (user_id) {
-            if (!isValidUuid(user_id)) {
+        if (userId) {
+            if (!isValidUuid(userId)) {
                 return res.status(400).json({ error: 'Некорректный UUID пользователя' });
             }
-            params.push(user_id);
+            params.push(userId);
             conditions.push(`r.reviewee_id = $${params.length}`);
         }
 

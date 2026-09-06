@@ -30,6 +30,7 @@ import type { AddressOption } from '../hooks/useAddressSuggest';
 import {
   useRideForm,
   WEEK_DAYS,
+  AVAILABLE_TAGS,
   AI_ACCENT,
   getTodayDateString,
 } from '../hooks/useRideForm';
@@ -57,6 +58,10 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
     setTelegram,
     price,
     setPrice,
+    description,
+    setDescription,
+    tags,
+    handleTagToggle,
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
@@ -529,6 +534,42 @@ export default function OfferRideScreen({ onNavigateToProfile }: OfferRideScreen
               </Select>
             </FormControl>
           )}
+
+          {/* Панель выбора тегов поездки (Chips) */}
+          <Box>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+              Особенности поездки
+            </Typography>
+            <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+              {AVAILABLE_TAGS.map((tag) => {
+                const isSelected = tags.includes(tag);
+                return (
+                  <Chip
+                    key={tag}
+                    label={tag}
+                    clickable={!hasNoVehicles}
+                    disabled={hasNoVehicles}
+                    color={isSelected ? 'primary' : 'default'}
+                    variant={isSelected ? 'filled' : 'outlined'}
+                    onClick={() => handleTagToggle(tag)}
+                    sx={{ fontWeight: 500 }}
+                  />
+                );
+              })}
+            </Stack>
+          </Box>
+
+          {/* Многострочное текстовое поле "Примечания к маршруту" (description) */}
+          <TextField
+            fullWidth
+            label="Примечания к маршруту"
+            placeholder="Например: встречаемся у главного входа, багажник свободен, едем без остановок"
+            multiline
+            rows={3}
+            disabled={hasNoVehicles}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
 
           <TextField
             fullWidth

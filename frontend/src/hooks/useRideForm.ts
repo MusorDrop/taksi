@@ -7,6 +7,17 @@ import { useAddressSuggest, type UseAddressSuggestReturn } from './useAddressSug
 
 export const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+export const AVAILABLE_TAGS = [
+  'Музыка',
+  'Болтливый',
+  'Аккуратно вожу',
+  'Чисто',
+  'Не курить',
+  'С животными',
+] as const;
+
+export type RideTag = (typeof AVAILABLE_TAGS)[number];
+
 export const AI_ACCENT = {
   bg: 'linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%)',
   border: 'rgba(99, 102, 241, 0.22)',
@@ -66,6 +77,11 @@ export interface UseRideFormReturn {
   setTelegram: (tg: string) => void;
   price: string;
   setPrice: (price: string) => void;
+  description: string;
+  setDescription: (desc: string) => void;
+  tags: string[];
+  setTags: (tags: string[]) => void;
+  handleTagToggle: (tag: string) => void;
   vehicles: Vehicle[];
   selectedVehicleId: string;
   setSelectedVehicleId: (id: string) => void;
@@ -103,6 +119,8 @@ export function useRideForm(): UseRideFormReturn {
   const [time, setTime] = useState<string>(getDefaultTimeString);
   const [telegram, setTelegram] = useState(user?.telegram ?? '');
   const [price, setPrice] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [tags, setTags] = useState<string[]>([]);
   const [success, setSuccess] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
@@ -259,6 +277,12 @@ export function useRideForm(): UseRideFormReturn {
     );
   }, []);
 
+  const handleTagToggle = useCallback((tag: string): void => {
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }, []);
+
   const handleSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (!canSubmit || parsedPrice === null || isSubmitting) {
@@ -295,6 +319,8 @@ export function useRideForm(): UseRideFormReturn {
         ride_type: rideType,
         regularDays: rideType === 'regular' ? regularDays.join(', ') : null,
         regular_days: rideType === 'regular' ? regularDays.join(', ') : null,
+        description: description.trim() || undefined,
+        tags: tags.length > 0 ? tags : undefined,
       });
 
       if (successTimerRef.current) {
@@ -306,11 +332,13 @@ export function useRideForm(): UseRideFormReturn {
       setDate(getDefaultDateString());
       setTime(getDefaultTimeString());
       setPrice('');
+      setDescription('');
+      setTags([]);
       setRoutePolyline(null);
       setRouteDistance(null);
       setRouteDuration(null);
       setStartCoords(null);
-      setEndCoords(null);
+      endCoords && setEndCoords(null);
 
       successTimerRef.current = setTimeout(() => {
         setSuccess(false);
@@ -339,6 +367,11 @@ export function useRideForm(): UseRideFormReturn {
     setTelegram,
     price,
     setPrice,
+    description,
+    setDescription,
+    tags,
+    setTags,
+    handleTagToggle,
     vehicles,
     selectedVehicleId,
     setSelectedVehicleId,
