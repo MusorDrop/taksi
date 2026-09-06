@@ -39,12 +39,6 @@ const globalStyles = (
     styles={{
       '*': {
         WebkitTapHighlightColor: 'transparent',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-      },
-      'input, textarea': {
-        userSelect: 'text',
-        WebkitUserSelect: 'text',
       },
       html: {
         WebkitTextSizeAdjust: '100%',
