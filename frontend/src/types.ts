@@ -76,7 +76,7 @@ export interface Ride {
   departure_time?: string;
   departureTime?: string;
   time: string;
-  telegram: string;
+  telegram?: string;
   price: number;
   currentPrice: number;
   passengerIds?: string[];
