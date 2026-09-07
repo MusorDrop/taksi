@@ -12,6 +12,10 @@ import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -586,16 +590,22 @@ export default function ProfileScreen() {
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
               />
-              <TextField
-                fullWidth
-                size="small"
-                label="Количество мест *"
-                type="number"
-                value={seats}
-                onChange={(e) => setSeats(Math.min(8, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                inputProps={{ min: 1, max: 8 }}
-                required
-              />
+              <FormControl fullWidth size="small">
+                <InputLabel id="car-seats-label">Количество мест</InputLabel>
+                <Select
+                  labelId="car-seats-label"
+                  id="car-seats-select"
+                  value={seats}
+                  label="Количество мест"
+                  onChange={(e) => setSeats(Number(e.target.value))}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                    <MenuItem key={num} value={num}>
+                      {num}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
               <Button
                 type="submit"
                 variant="contained"

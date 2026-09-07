@@ -107,6 +107,7 @@ export interface Ride {
   endCoords?: { lon: number; lat: number };
   polyline?: [number, number][];
   durationMin?: number;
+  hasReviewed?: boolean;
 }
 
 export type TabKey = 'find' | 'offer' | 'trips' | 'profile';
@@ -187,6 +188,7 @@ export interface BackendRide {
   regular_days?: string | null;
   polyline?: [number, number][];
   duration_min?: number;
+  has_reviewed?: boolean;
   created_at?: string;
 }
 

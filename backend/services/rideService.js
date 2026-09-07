@@ -316,7 +316,7 @@ async function getRides(query = {}, currentUserId = null) {
             conditions.push(`r.status = $${params.length}`);
         }
     } else {
-        conditions.push("r.status IN ('planned', 'scheduled')");
+        conditions.push("r.status IN ('planned', 'scheduled', 'active')");
     }
 
     if (departure_time || time) {
@@ -324,7 +324,7 @@ async function getRides(query = {}, currentUserId = null) {
         params.push(parsedTime);
         conditions.push(`r.departure_time >= $${params.length}`);
     } else {
-        conditions.push('r.departure_time > NOW()');
+        conditions.push("(r.departure_time > NOW() OR r.status = 'active')");
     }
 
     if (startCheck.point) {
@@ -397,7 +397,10 @@ async function getMyRides(userId) {
     }
 
     const selectQuery = `
-        ${BASE_RIDE_SELECT}
+        ${BASE_RIDE_SELECT.replace(
+            'FROM rides r',
+            ', EXISTS (SELECT 1 FROM reviews rv WHERE rv.ride_id = r.id AND rv.reviewer_id = $1) AS has_reviewed\n    FROM rides r'
+        )}
         WHERE r.driver_id = $1 OR EXISTS (
             SELECT 1 FROM matches m2 WHERE m2.ride_id = r.id AND m2.passenger_id = $1 AND m2.status IN ('accepted', 'completed')
         )
@@ -836,12 +839,14 @@ function validateRideStartEligibility(ride, driverId) {
 }
 
 /**
- * Создание и запуск экземпляра регулярной поездки
+ * Создание и запуск экземпляра регулярной поездки с переносом пассажиров текущего дня
  * @param {import('pg').PoolClient} client - Клиент БД
  * @param {object} currentRide - Текущая запись шаблона поездки
  * @returns {Promise<{id: string}>} Созданный экземпляр
  */
 async function executeRegularRideCopy(client, currentRide) {
+    const currentDay = String(new Date().getDay()); // '0'-'6', где 0 — воскресенье
+
     const copyQuery = `
         INSERT INTO rides (
             driver_id, vehicle_id, parent_ride_id, departure_time,
@@ -872,12 +877,12 @@ async function executeRegularRideCopy(client, currentRide) {
         currentRide.end_lat,
         currentRide.route_line,
         currentRide.total_seats,
-        currentRide.available_seats,
+        currentRide.total_seats,
         currentRide.base_price,
         currentRide.regular_days,
         currentRide.distance_meters,
         currentRide.duration_seconds,
-        JSON.stringify(currentRide.route_polyline),
+        currentRide.route_polyline ? JSON.stringify(currentRide.route_polyline) : null,
         currentRide.description,
         currentRide.tags || [],
         currentRide.start_address || null,
@@ -894,13 +899,39 @@ async function executeRegularRideCopy(client, currentRide) {
             started_at = CURRENT_TIMESTAMP
     `, [currentRide.id, instanceRideId]);
 
-    await client.query(`
+    // Переносим только пассажиров с выбранным текущим днем недели
+    const copyMatchesRes = await client.query(`
         INSERT INTO matches (ride_id, passenger_id, agreed_price, status, selected_day)
         SELECT $1, passenger_id, agreed_price, 'accepted', selected_day
         FROM matches
-        WHERE ride_id = $2 AND status = 'accepted'
+        WHERE ride_id = $2 AND status = 'accepted' AND selected_day = $3
         ON CONFLICT (ride_id, passenger_id) DO NOTHING
-    `, [instanceRideId, currentRide.id]);
+        RETURNING passenger_id
+    `, [instanceRideId, currentRide.id, currentDay]);
+
+    const movedPassengersCount = copyMatchesRes.rows.length;
+
+    // Удаляем перенесенных пассажиров из родительской поездки
+    await client.query(`
+        DELETE FROM matches
+        WHERE ride_id = $1 AND selected_day = $2
+    `, [currentRide.id, currentDay]);
+
+    // Увеличиваем количество свободных мест в родительской поездке
+    if (movedPassengersCount > 0) {
+        await client.query(`
+            UPDATE rides
+            SET available_seats = LEAST(total_seats, available_seats + $1)
+            WHERE id = $2
+        `, [movedPassengersCount, currentRide.id]);
+    }
+
+    // Устанавливаем доступные места в активном экземпляре поездки
+    await client.query(`
+        UPDATE rides
+        SET available_seats = GREATEST(0, total_seats - $1)
+        WHERE id = $2
+    `, [movedPassengersCount, instanceRideId]);
 
     return { id: instanceRideId };
 }
