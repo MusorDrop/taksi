@@ -118,7 +118,7 @@ graph TD
     AuthMiddleware --> RouteController
     AuthMiddleware --> AIController
 
-    RouteController -->|SELECT ... FOR UPDATE (Анти-овербукинг)| PG
+    RouteController -->|"SELECT ... FOR UPDATE (Анти-овербукинг)"| PG
     RouteController -->|ST_DWithin / GiST поиск| GIS
     RouteController --> Cache
 
