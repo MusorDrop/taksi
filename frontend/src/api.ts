@@ -219,3 +219,7 @@ export async function getMyRidesApi(options?: RequestOptions): Promise<RidesResp
   return api.get<RidesResponse>('/api/rides/my-rides', options);
 }
 
+export type { BackendRide, Ride } from './types';
+export { mapBackendRideToRide } from './utils';
+
+

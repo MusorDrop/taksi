@@ -397,7 +397,10 @@ async function getMyRides(userId) {
     }
 
     const selectQuery = `
-        ${BASE_RIDE_SELECT}
+        ${BASE_RIDE_SELECT.replace(
+            'FROM rides r',
+            ', EXISTS (SELECT 1 FROM reviews rv WHERE rv.ride_id = r.id AND rv.reviewer_id = $1) AS has_reviewed\n    FROM rides r'
+        )}
         WHERE r.driver_id = $1 OR EXISTS (
             SELECT 1 FROM matches m2 WHERE m2.ride_id = r.id AND m2.passenger_id = $1 AND m2.status IN ('accepted', 'completed')
         )

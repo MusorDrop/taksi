@@ -102,7 +102,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
-  const [isReviewed, setIsReviewed] = useState<boolean>(false);
+  const [isReviewed, setIsReviewed] = useState<boolean>(ride.hasReviewed || false);
 
   // Проверка: является ли текущий пользователь пассажиром поездки (включая passenger_ids)
   const hasJoinedAsPassenger = Boolean(

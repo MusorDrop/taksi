@@ -276,6 +276,7 @@ export function mapBackendRideToRide(backendRide: import('./types').BackendRide)
     endCoords: backendRide.end_coords,
     polyline: backendRide.polyline,
     durationMin: backendRide.duration_min,
+    hasReviewed: Boolean(backendRide.has_reviewed),
   };
 }
 
