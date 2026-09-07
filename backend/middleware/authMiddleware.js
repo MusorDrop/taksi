@@ -50,8 +50,34 @@ async function authenticateToken(req, res, next) {
     }
 }
 
+/**
+ * Опциональная проверка JWT токена из заголовка Authorization.
+ * Если токен передан и валиден, в req.user записываются данные пользователя.
+ * Если токен отсутствует или недействителен, выполнение продолжается без ошибки.
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ * @param {import('express').NextFunction} next - Функция перехода к следующему middleware
+ */
+async function optionalAuthenticate(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return next();
+    }
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+        req.user = decoded;
+    } catch {
+        // Игнорируем ошибки верификации для опциональной аутентификации
+    }
+    return next();
+}
+
 module.exports = {
     JWT_SECRET,
-    authenticateToken
+    authenticateToken,
+    optionalAuthenticate
 };
 

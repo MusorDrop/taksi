@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const rideController = require('../controllers/rideController');
-const { authenticateToken } = require('../middleware/authMiddleware');
+const { authenticateToken, optionalAuthenticate } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -22,7 +22,7 @@ const rideLimiter = process.env.NODE_ENV === 'test'
 router.use(rideLimiter);
 
 // Получение списка поездок
-router.get('/', rideController.getRides);
+router.get('/', optionalAuthenticate, rideController.getRides);
 
 // Предварительный просмотр маршрута (полилиния, цена, дистанция, время)
 router.get('/route-preview', rideController.getRoutePreview);
@@ -37,7 +37,7 @@ router.get('/my', authenticateToken, rideController.getMyRides);
 router.get('/my-rides', authenticateToken, rideController.getMyRides);
 
 // Получение информации о конкретной поездке по ID (🔵-9)
-router.get('/:id', rideController.getRideById);
+router.get('/:id', optionalAuthenticate, rideController.getRideById);
 
 // Создание новой поездки водителем
 router.post('/', authenticateToken, rideController.createRide);

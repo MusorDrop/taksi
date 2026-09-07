@@ -114,6 +114,19 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 /**
+ * Класс ошибки API с HTTP-статусом ответа
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+/**
  * Базовый метод для отправки типизированных запросов к API через fetch
  * @param endpoint - Относительный или абсолютный URL запроса
  * @param options - Дополнительные параметры запроса (метод, заголовки, AbortSignal)
@@ -140,7 +153,7 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
       handleUnauthorized();
     }
     const message = await extractErrorMessage(response);
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
