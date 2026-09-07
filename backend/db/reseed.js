@@ -1,4 +1,4 @@
-﻿const path = require('path');
+const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
@@ -15,21 +15,30 @@ async function resetDatabase(client) {
     await client.query('GRANT ALL ON SCHEMA public TO postgres;');
     await client.query('GRANT ALL ON SCHEMA public TO public;');
 
-    console.log('2. Применение миграции 001_initial_schema.sql...');
-    const migrationPath = path.join(__dirname, 'migrations', '001_initial_schema.sql');
-    const sql = fs.readFileSync(migrationPath, 'utf8');
-    await client.query(sql);
-
-    // Фиксация миграции в schema_migrations
+    console.log('2. Применение всех миграций схемы из каталога migrations...');
     await client.query(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version VARCHAR(255) PRIMARY KEY,
             applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-        INSERT INTO schema_migrations (version) VALUES ('001_initial_schema.sql')
-        ON CONFLICT DO NOTHING;
     `);
-    console.log('   Схема успешно развернута.');
+
+    const migrationsDir = path.join(__dirname, 'migrations');
+    const migrationFiles = fs.readdirSync(migrationsDir)
+        .filter((f) => f.endsWith('.sql'))
+        .sort();
+
+    for (const file of migrationFiles) {
+        console.log(`   Применение миграции ${file}...`);
+        const filePath = path.join(migrationsDir, file);
+        const sql = fs.readFileSync(filePath, 'utf8');
+        await client.query(sql);
+        await client.query(
+            'INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING;',
+            [file]
+        );
+    }
+    console.log('   Схема успешно развернута со всеми миграциями.');
 }
 
 /**

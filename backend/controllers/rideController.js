@@ -5,13 +5,13 @@
 
 const bookingService = require('../services/bookingService');
 const rideService = require('../services/rideService');
+const routeService = require('../services/routeService');
 const {
     isPeakHour,
     calculateDistanceKm,
     calculateBasePrice,
-    generateRoutePolyline,
-    getRoutePreview
-} = require('../services/routeService');
+    generateRoutePolyline
+} = routeService;
 
 /**
  * Единый обработчик ошибок контроллера поездок
@@ -25,6 +25,26 @@ function handleControllerError(res, err, defaultMessage) {
     }
     console.error(defaultMessage, err);
     return res.status(500).json({ error: defaultMessage });
+}
+
+/**
+ * Предварительный просмотр маршрута через Yandex Maps API
+ * GET /api/rides/route-preview
+ * POST /api/rides/route-preview
+ * @param {import('express').Request} req - Запрос Express
+ * @param {import('express').Response} res - Ответ Express
+ */
+async function getRoutePreview(req, res) {
+    try {
+        const from = req.query.from || req.body?.from || req.query.start || req.body?.start_point;
+        const to = req.query.to || req.body?.to || req.query.end || req.body?.end_point;
+        const time = req.query.time || req.body?.time || req.query.departure_time || req.body?.departure_time;
+
+        const result = await routeService.getRoutePreview({ from, to, time });
+        return res.json(result);
+    } catch (err) {
+        return handleControllerError(res, err, 'Не удалось построить предпросмотр маршрута');
+    }
 }
 
 /**
@@ -54,7 +74,8 @@ async function createRide(req, res) {
  */
 async function getRides(req, res) {
     try {
-        const result = await rideService.getRides(req.query);
+        const currentUserId = req.user?.id || null;
+        const result = await rideService.getRides(req.query, currentUserId);
         return res.json(result);
     } catch (err) {
         return handleControllerError(res, err, 'Внутренняя ошибка сервера при получении списка поездок');
@@ -69,7 +90,8 @@ async function getRides(req, res) {
  */
 async function getRideById(req, res) {
     try {
-        const result = await rideService.getRideById(req.params.id);
+        const currentUserId = req.user?.id || null;
+        const result = await rideService.getRideById(req.params.id, currentUserId);
         return res.json(result);
     } catch (err) {
         return handleControllerError(res, err, 'Внутренняя ошибка сервера при получении информации о поездке');

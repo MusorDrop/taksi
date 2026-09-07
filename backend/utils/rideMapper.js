@@ -1,5 +1,5 @@
 const yandexMaps = require('../services/yandexMaps');
-const routeService = require('../services/routeService');
+const { generateRoutePolyline } = require('./geometry');
 
 /**
  * Базовый SQL-запрос для выборки подробных данных поездки со всеми связями
@@ -176,17 +176,47 @@ function resolvePolylineCoordinates(row) {
     const endLat = Number(row.end_lat);
 
     if (!isNaN(startLon) && !isNaN(startLat) && !isNaN(endLon) && !isNaN(endLat)) {
-        return routeService.generateRoutePolyline(startLon, startLat, endLon, endLat);
+        return generateRoutePolyline(startLon, startLat, endLon, endLat);
     }
     return [];
 }
 
 /**
+ * Маскирование номера телефона в формате +7 922 ***-**-33 для защиты персональных данных
+ * @param {string|null} phone - Исходный номер телефона
+ * @returns {string|null} Замаскированный номер телефона
+ */
+function maskPhone(phone) {
+    if (!phone || typeof phone !== 'string') {
+        return null;
+    }
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'))) {
+        const code = digits.slice(1, 4);
+        const last = digits.slice(9, 11);
+        return `+7 ${code} ***-**-${last}`;
+    }
+    if (digits.length === 10) {
+        const code = digits.slice(0, 3);
+        const last = digits.slice(8, 10);
+        return `+7 ${code} ***-**-${last}`;
+    }
+    if (digits.length >= 7) {
+        const prefix = digits.slice(0, 2);
+        const last = digits.slice(-2);
+        return `+${prefix} ***-**-${last}`;
+    }
+    return '***-**-**';
+}
+
+/**
  * Преобразование строки БД в стандартизированный объект поездки с фиксированной ценой
+ * и маскированием телефонных номеров для сторонних пользователей
  * @param {object} row - Данные поездки из БД
+ * @param {string|null} [currentUserId=null] - Идентификатор текущего авторизованного пользователя
  * @returns {object|null} Форматированный объект поездки
  */
-function mapRideRow(row) {
+function mapRideRow(row, currentUserId = null) {
     if (!row) {
         return null;
     }
@@ -200,6 +230,19 @@ function mapRideRow(row) {
     const vehicle = extractVehicleInfo(row);
     const passengers = extractPassengers(row.passengers);
     const polyline = resolvePolylineCoordinates(row);
+
+    const isDriver = currentUserId && String(row.driver_id) === String(currentUserId);
+    const isPassenger = currentUserId && passengerIds.some((id) => String(id) === String(currentUserId));
+    const isParticipant = Boolean(isDriver || isPassenger);
+
+    const driverPhone = isParticipant ? (row.driver_phone || null) : maskPhone(row.driver_phone);
+    const maskedPassengers = passengers.map((p) => {
+        if (!p) return p;
+        return {
+            ...p,
+            phone: isParticipant ? (p.phone || null) : maskPhone(p.phone)
+        };
+    });
 
     const driverRating = row.driver_rating !== null && row.driver_rating !== undefined
         ? Number(row.driver_rating)
@@ -217,7 +260,7 @@ function mapRideRow(row) {
         plate_number: vehicle?.plate_number || null,
         driver_name: row.driver_first_name || row.driver_username || 'Водитель',
         driver_username: row.driver_username || null,
-        driver_phone: row.driver_phone || null,
+        driver_phone: driverPhone,
         driver_rating: driverRating,
         average_rating: driverRating,
         driver_reviews_count: reviewsCount,
@@ -248,7 +291,7 @@ function mapRideRow(row) {
         price: basePrice,
         current_price: basePrice,
         passenger_ids: passengerIds,
-        passengers: passengers,
+        passengers: maskedPassengers,
         total_seats: row.total_seats,
         available_seats: row.available_seats,
         status: row.status,
@@ -262,5 +305,6 @@ function mapRideRow(row) {
 module.exports = {
     BASE_RIDE_SELECT,
     parseDepartureTime,
-    mapRideRow
+    mapRideRow,
+    maskPhone
 };

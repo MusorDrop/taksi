@@ -195,24 +195,26 @@ async function createRide({ userId, userRole, rideData }) {
     const departureTime = validateDepartureTime(rideData.departure_time || rideData.time);
     const { totalSeats, availableSeats } = validateSeatsCount(rideData.total_seats, rideData.available_seats);
 
+    // Внешнее построение маршрута и расчет цены выполняются ДО захвата соединения из пула
+    const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+    const customPrice = rideData.base_price !== undefined ? rideData.base_price : rideData.price;
+    const basePrice = determineRidePrice(routeData, departureTime, customPrice);
+
+    const rideType = rideData.ride_type === 'regular' ? 'regular' : 'one_off';
+    const regularDays = rideType === 'regular'
+        ? (Array.isArray(rideData.regular_days) ? rideData.regular_days.join(',') : (typeof rideData.regular_days === 'string' ? rideData.regular_days.trim() : null))
+        : null;
+
+    const description = typeof rideData.description === 'string' && rideData.description.trim().length > 0
+        ? rideData.description.trim()
+        : null;
+    const tags = parseRideTags(rideData.tags);
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
         const driverInfo = await verifyDriverAndVehicle(client, userId, vehicleId);
-        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
-        const customPrice = rideData.base_price !== undefined ? rideData.base_price : rideData.price;
-        const basePrice = determineRidePrice(routeData, departureTime, customPrice);
-
-        const rideType = rideData.ride_type === 'regular' ? 'regular' : 'one_off';
-        const regularDays = rideType === 'regular'
-            ? (Array.isArray(rideData.regular_days) ? rideData.regular_days.join(',') : (typeof rideData.regular_days === 'string' ? rideData.regular_days.trim() : null))
-            : null;
-
-        const description = typeof rideData.description === 'string' && rideData.description.trim().length > 0
-            ? rideData.description.trim()
-            : null;
-        const tags = parseRideTags(rideData.tags);
 
         const insertQuery = `
             INSERT INTO rides (
@@ -266,7 +268,7 @@ async function createRide({ userId, userRole, rideData }) {
             passengers: []
         };
 
-        const mappedRide = mapRideRow(combinedRow);
+        const mappedRide = mapRideRow(combinedRow, userId);
         return {
             message: 'Поездка успешно создана',
             ride: mappedRide,
@@ -283,9 +285,10 @@ async function createRide({ userId, userRole, rideData }) {
 /**
  * Получение списка поездок с поддержкой гео-фильтрации
  * @param {object} query - Параметры запроса
+ * @param {string|null} [currentUserId=null] - ID авторизованного пользователя для проверки прав доступа к приватным данным
  * @returns {Promise<object>} Список поездок и метаданные
  */
-async function getRides(query = {}) {
+async function getRides(query = {}, currentUserId = null) {
     const { start_lat, start_lon, end_lat, end_lon, radius, departure_time, time, status } = query;
 
     const radiusResult = parseSearchRadius(radius);
@@ -358,7 +361,7 @@ async function getRides(query = {}) {
 
     const result = await pool.query(selectQuery, params);
     const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
-    const rides = result.rows.map(mapRideRow);
+    const rides = result.rows.map((row) => mapRideRow(row, currentUserId));
 
     return { count: rides.length, total_count: totalCount, page, limit, rides };
 }
@@ -366,9 +369,10 @@ async function getRides(query = {}) {
 /**
  * Получение детальной информации о поездке по ID
  * @param {string} rideId - ID поездки
+ * @param {string|null} [currentUserId=null] - ID авторизованного пользователя
  * @returns {Promise<object>} Данные поездки
  */
-async function getRideById(rideId) {
+async function getRideById(rideId, currentUserId = null) {
     if (!isValidUuid(rideId)) {
         throw new ServiceError('Некорректный формат идентификатора поездки (UUID)', 400);
     }
@@ -379,7 +383,7 @@ async function getRideById(rideId) {
         throw new ServiceError('Поездка не найдена', 404);
     }
 
-    return { ride: mapRideRow(result.rows[0]) };
+    return { ride: mapRideRow(result.rows[0], currentUserId) };
 }
 
 /**
@@ -401,7 +405,7 @@ async function getMyRides(userId) {
     `;
 
     const result = await pool.query(selectQuery, [userId]);
-    const rides = result.rows.map(mapRideRow);
+    const rides = result.rows.map((row) => mapRideRow(row, userId));
     return { count: rides.length, rides };
 }
 
@@ -599,45 +603,100 @@ async function updateRide({ rideId, driverId, updateData }) {
         throw new ServiceError('Пользователь не авторизован', 401);
     }
 
+    // 1. Предварительная проверка существования поездки и прав создателя без блокировки
+    const preCheck = await pool.query(`
+        SELECT r.*,
+               ST_X(r.start_point) as start_lon, ST_Y(r.start_point) as start_lat,
+               ST_X(r.end_point) as end_lon, ST_Y(r.end_point) as end_lat
+        FROM rides r
+        WHERE r.id = $1
+    `, [rideId]);
+
+    if (preCheck.rows.length === 0) {
+        throw new ServiceError('Поездка не найдена', 404);
+    }
+
+    const currentRide = preCheck.rows[0];
+    if (currentRide.driver_id !== driverId) {
+        throw new ServiceError('Редактировать поездку может только её создатель', 403);
+    }
+    if (currentRide.status !== 'planned' && currentRide.status !== 'scheduled') {
+        throw new ServiceError('Можно редактировать только запланированные поездки', 400);
+    }
+
+    // 2. Внешнее геокодирование адресов до открытия транзакции БД
+    const coords = await resolveUpdatedCoordinates(updateData, currentRide);
+
+    let departureTime = currentRide.departure_time;
+    if (updateData.departure_time || updateData.time) {
+        departureTime = parseDepartureTime(updateData.departure_time || updateData.time);
+    }
+
+    // 3. Внешний расчет маршрута через Yandex Maps до захвата соединения из пула
+    let routeData = null;
+    if (coords.coordsChanged) {
+        routeData = await yandexMaps.buildRoute(
+            { lon: coords.startLon, lat: coords.startLat },
+            { lon: coords.endLon, lat: coords.endLat }
+        );
+    }
+
+    const hasCustomPrice = (updateData.base_price !== undefined && updateData.base_price !== null && String(updateData.base_price).trim() !== '') ||
+                           (updateData.price !== undefined && updateData.price !== null && String(updateData.price).trim() !== '');
+
+    let basePrice = currentRide.base_price;
+    if (hasCustomPrice) {
+        const rawVal = updateData.base_price !== undefined ? updateData.base_price : updateData.price;
+        const parsedVal = parseFloat(rawVal);
+        if (isNaN(parsedVal) || parsedVal <= 0) {
+            throw new ServiceError('Стоимость поездки должна быть больше 0', 400);
+        }
+        basePrice = Math.round(parsedVal * 100) / 100;
+    } else if (coords.coordsChanged && routeData) {
+        const trip = yandexMaps.calculateTripPrice(routeData.distance_meters, routeData.duration_seconds, departureTime);
+        basePrice = trip.base_price;
+    }
+
+    if (basePrice <= 0) {
+        throw new ServiceError('Стоимость поездки должна быть больше 0', 400);
+    }
+
+    let rideType = currentRide.ride_type || 'one_off';
+    if (updateData.ride_type !== undefined) {
+        rideType = updateData.ride_type === 'regular' ? 'regular' : 'one_off';
+    }
+
+    let regularDays = currentRide.regular_days;
+    if (updateData.regular_days !== undefined) {
+        regularDays = rideType === 'regular'
+            ? (Array.isArray(updateData.regular_days) ? updateData.regular_days.join(',') : (typeof updateData.regular_days === 'string' ? updateData.regular_days.trim() : null))
+            : null;
+    }
+
+    let description = currentRide.description;
+    if (updateData.description !== undefined) {
+        description = typeof updateData.description === 'string' && updateData.description.trim().length > 0
+            ? updateData.description.trim()
+            : null;
+    }
+
+    let tags = currentRide.tags;
+    if (updateData.tags !== undefined) {
+        tags = parseRideTags(updateData.tags);
+    }
+
+    const distanceMeters = routeData ? routeData.distance_meters : currentRide.distance_meters;
+    const durationSeconds = routeData ? routeData.duration_seconds : currentRide.duration_seconds;
+    const routePolyline = routeData ? JSON.stringify(routeData.route_polyline) : (currentRide.route_polyline ? JSON.stringify(currentRide.route_polyline) : null);
+
+    // 4. Открытие короткой транзакции только для проверки блокировки, автомобиля и записи изменений
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
 
-        const { currentRide, driverInfo, currentPassengersCount } = await getRideForUpdate(client, rideId, driverId);
-        const coords = await resolveUpdatedCoordinates(updateData, currentRide);
-
-        let departureTime = currentRide.departure_time;
-        if (updateData.departure_time || updateData.time) {
-            departureTime = parseDepartureTime(updateData.departure_time || updateData.time);
-        }
-
+        const { driverInfo, currentPassengersCount } = await getRideForUpdate(client, rideId, driverId);
         const vehicleId = await resolveUpdatedVehicleId(client, updateData, currentRide, driverId);
         const { totalSeats, availableSeats } = resolveUpdatedSeats(updateData, currentRide, currentPassengersCount);
-        const basePrice = await resolveUpdatedPrice(client, updateData, currentRide, coords.coordsChanged, coords, departureTime);
-
-        let rideType = currentRide.ride_type || 'one_off';
-        if (updateData.ride_type !== undefined) {
-            rideType = updateData.ride_type === 'regular' ? 'regular' : 'one_off';
-        }
-
-        let regularDays = currentRide.regular_days;
-        if (updateData.regular_days !== undefined) {
-            regularDays = rideType === 'regular'
-                ? (Array.isArray(updateData.regular_days) ? updateData.regular_days.join(',') : (typeof updateData.regular_days === 'string' ? updateData.regular_days.trim() : null))
-                : null;
-        }
-
-        let description = currentRide.description;
-        if (updateData.description !== undefined) {
-            description = typeof updateData.description === 'string' && updateData.description.trim().length > 0
-                ? updateData.description.trim()
-                : null;
-        }
-
-        let tags = currentRide.tags;
-        if (updateData.tags !== undefined) {
-            tags = parseRideTags(updateData.tags);
-        }
 
         const updateQuery = `
             UPDATE rides
@@ -654,8 +713,11 @@ async function updateRide({ rideId, driverId, updateData }) {
                 description = $12,
                 tags = $13,
                 start_address = $14,
-                end_address = $15
-            WHERE id = $16
+                end_address = $15,
+                distance_meters = $16,
+                duration_seconds = $17,
+                route_polyline = $18
+            WHERE id = $19
             RETURNING 
                 id, driver_id, vehicle_id, parent_ride_id, departure_time,
                 start_address, end_address,
@@ -675,6 +737,7 @@ async function updateRide({ rideId, driverId, updateData }) {
             vehicleId, rideType, regularDays,
             description, tags,
             coords.startAddress, coords.endAddress,
+            distanceMeters, durationSeconds, routePolyline,
             rideId
         ]);
 
@@ -695,7 +758,7 @@ async function updateRide({ rideId, driverId, updateData }) {
 
         return {
             message: 'Поездка успешно обновлена',
-            ride: mapRideRow(combinedRow)
+            ride: mapRideRow(combinedRow, driverId)
         };
     } catch (err) {
         await client.query('ROLLBACK');
@@ -884,7 +947,7 @@ async function startRide({ rideId, driverId }) {
             const fullRes = await pool.query(`${BASE_RIDE_SELECT} WHERE r.id = $1`, [instance.id]);
             return {
                 message: 'Регулярная поездка успешно начата',
-                ride: mapRideRow(fullRes.rows[0])
+                ride: mapRideRow(fullRes.rows[0], driverId)
             };
         }
 
@@ -894,7 +957,7 @@ async function startRide({ rideId, driverId }) {
         const fullRes = await pool.query(`${BASE_RIDE_SELECT} WHERE r.id = $1`, [rideId]);
         return {
             message: 'Поездка успешно начата',
-            ride: mapRideRow(fullRes.rows[0])
+            ride: mapRideRow(fullRes.rows[0], driverId)
         };
     } catch (err) {
         await client.query('ROLLBACK');
@@ -965,7 +1028,7 @@ async function finishRide({ rideId, driverId }) {
         const fullRes = await pool.query(`${BASE_RIDE_SELECT} WHERE r.id = $1`, [rideId]);
         return {
             message: 'Поездка успешно завершена',
-            ride: mapRideRow(fullRes.rows[0])
+            ride: mapRideRow(fullRes.rows[0], driverId)
         };
     } catch (err) {
         await client.query('ROLLBACK');

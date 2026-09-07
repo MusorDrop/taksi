@@ -1,6 +1,8 @@
 const yandexMaps = require('./yandexMaps');
 const { KNOWN_LOCATIONS, DEFAULT_START, DEFAULT_END } = require('../utils/locations');
 const rideMapper = require('../utils/rideMapper');
+const { ServiceError } = require('../utils/errors');
+const { generateRoutePolyline } = require('../utils/geometry');
 
 /**
  * Определение часа пик через сервис yandexMaps
@@ -114,36 +116,6 @@ function calculateBasePrice(distanceKm) {
     return yandexMaps.calculateTripPrice(distanceKm * 1000, 0).base_price;
 }
 
-/**
- * Генерация плавной полилинии маршрута кривой Безье между двумя точками
- * @param {number} startLon - Долгота начальной точки
- * @param {number} startLat - Широта начальной точки
- * @param {number} endLon - Долгота конечной точки
- * @param {number} endLat - Широта конечной точки
- * @param {number} [numPoints=18] - Количество точек интерполяции
- * @returns {Array<[number, number]>} Массив координат [lon, lat]
- */
-function generateRoutePolyline(startLon, startLat, endLon, endLat, numPoints = 18) {
-    const points = [];
-    const dx = endLon - startLon;
-    const dy = endLat - startLat;
-    const midX = (startLon + endLon) / 2;
-    const midY = (startLat + endLat) / 2;
-    const devX = -dy * 0.12;
-    const devY = dx * 0.12;
-
-    for (let i = 0; i <= numPoints; i++) {
-        const t = i / numPoints;
-        const oneMinusT = 1 - t;
-        const lon = oneMinusT * oneMinusT * startLon + 2 * oneMinusT * t * (midX + devX) + t * t * endLon;
-        const lat = oneMinusT * oneMinusT * startLat + 2 * oneMinusT * t * (midY + devY) + t * t * endLat;
-        points.push([
-            Math.round(lon * 100000) / 100000,
-            Math.round(lat * 100000) / 100000
-        ]);
-    }
-    return points;
-}
 
 /**
  * Разрешение координат конечной точки (строка с адресом или готовые координаты)
@@ -215,48 +187,46 @@ function formatRoutePreviewResponse(startCoords, endCoords, routeData, priceInfo
 }
 
 /**
- * Предварительный расчет маршрута (полилиния, цена, дистанция, время в пути через Yandex Maps API)
- * @param {import('express').Request} req - Express запрос
- * @param {import('express').Response} res - Express ответ
+ * Предварительный расчет маршрута (сервисный метод без HTTP req/res)
+ * @param {object} params - Параметры запроса маршрута
+ * @param {string|object} params.from - Начальная точка
+ * @param {string|object} params.to - Конечная точка
+ * @param {any} [params.time] - Время отправления
+ * @returns {Promise<object>} Данные маршрута с ценой и полилинией
  */
-async function getRoutePreview(req, res) {
-    try {
-        const fromInput = req.query.from || req.body?.from || req.query.start || req.body?.start_point;
-        const toInput = req.query.to || req.body?.to || req.query.end || req.body?.end_point;
-        const timeInput = req.query.time || req.body?.time || req.query.departure_time || req.body?.departure_time;
+async function getRoutePreview({ from, to, time } = {}) {
+    const fromInput = from;
+    const toInput = to;
+    const timeInput = time;
 
-        if (!fromInput || !toInput) {
-            return res.status(400).json({ error: 'Параметры "from" и "to" обязательны для построения маршрута' });
-        }
-
-        const startCoords = await resolveEndpoint(fromInput, DEFAULT_START);
-        const endCoords = await resolveEndpoint(toInput, DEFAULT_END);
-
-        const pointError = validateEndpoints(fromInput, toInput, startCoords, endCoords);
-        if (pointError) {
-            return res.status(400).json({ error: pointError });
-        }
-
-        const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
-        if (!routeData.distance_meters || routeData.distance_meters <= 0) {
-            return res.status(400).json({ error: 'Точки отправления и назначения не могут совпадать (нулевая дистанция)' });
-        }
-
-        const departureDate = rideMapper.parseDepartureTime(timeInput);
-        const priceInfo = yandexMaps.calculateTripPrice(
-            routeData.distance_meters,
-            routeData.duration_seconds,
-            departureDate
-        );
-        if (priceInfo.base_price <= 0) {
-            return res.status(400).json({ error: 'Стоимость поездки должна быть больше 0' });
-        }
-
-        return res.json(formatRoutePreviewResponse(startCoords, endCoords, routeData, priceInfo));
-    } catch (err) {
-        console.error('Ошибка в route-preview:', err);
-        return res.status(500).json({ error: 'Не удалось построить предпросмотр маршрута' });
+    if (!fromInput || !toInput) {
+        throw new ServiceError('Параметры "from" и "to" обязательны для построения маршрута', 400);
     }
+
+    const startCoords = await resolveEndpoint(fromInput, DEFAULT_START);
+    const endCoords = await resolveEndpoint(toInput, DEFAULT_END);
+
+    const pointError = validateEndpoints(fromInput, toInput, startCoords, endCoords);
+    if (pointError) {
+        throw new ServiceError(pointError, 400);
+    }
+
+    const routeData = await yandexMaps.buildRoute(startCoords, endCoords);
+    if (!routeData.distance_meters || routeData.distance_meters <= 0) {
+        throw new ServiceError('Точки отправления и назначения не могут совпадать (нулевая дистанция)', 400);
+    }
+
+    const departureDate = rideMapper.parseDepartureTime(timeInput);
+    const priceInfo = yandexMaps.calculateTripPrice(
+        routeData.distance_meters,
+        routeData.duration_seconds,
+        departureDate
+    );
+    if (priceInfo.base_price <= 0) {
+        throw new ServiceError('Стоимость поездки должна быть больше 0', 400);
+    }
+
+    return formatRoutePreviewResponse(startCoords, endCoords, routeData, priceInfo);
 }
 
 module.exports = {

@@ -26,7 +26,7 @@ import LockOpenIcon from '@mui/icons-material/LockOpen';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import LogoutIcon from '@mui/icons-material/Logout';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import type { BackendUser, Vehicle } from '../types';
 
 interface AdminRide {
@@ -133,8 +133,23 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
     } catch (err: unknown) {
       if (signal?.aborted) return;
       const msg = err instanceof Error ? err.message : 'Ошибка загрузки данных';
-      if (msg.includes('ключ') || msg.includes('401') || msg.includes('403')) {
+      const isKeyError = msg.toLowerCase().includes('ключ');
+      const isForbiddenAccount =
+        (err instanceof ApiError && err.status === 403) ||
+        msg.includes('403') ||
+        msg.toLowerCase().includes('права администратора') ||
+        msg.toLowerCase().includes('токен администратора');
+
+      if (isKeyError) {
         setAuthError('Недействительный ключ администратора. Пожалуйста, введите ключ повторно.');
+        sessionStorage.removeItem(STORAGE_KEY);
+        setAdminKey('');
+      } else if (isForbiddenAccount) {
+        setAuthError('Доступ запрещен. Пожалуйста, выполните вход с учетной записи администратора.');
+        sessionStorage.removeItem(STORAGE_KEY);
+        setAdminKey('');
+      } else if (err instanceof ApiError && err.status === 401) {
+        setAuthError('Сессия истекла. Пожалуйста, выполните вход с учетной записи администратора.');
         sessionStorage.removeItem(STORAGE_KEY);
         setAdminKey('');
       } else {
