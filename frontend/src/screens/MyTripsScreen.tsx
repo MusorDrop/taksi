@@ -35,8 +35,8 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
   );
 
   return (
-    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
+    <Box component="section" aria-label="Мои поездки" sx={{ pb: { xs: 12, sm: 8 } }}>
+      <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
         Мои поездки
       </Typography>
 
@@ -54,6 +54,7 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
           value={tab}
           onChange={(_, v) => setActiveTab(v)}
           variant="fullWidth"
+          aria-label="Категории моих поездок"
           sx={{
             minHeight: 40,
             '& .MuiTabs-indicator': {
@@ -79,13 +80,25 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
             },
           }}
         >
-          <Tab label={`Я пассажир (${passengerRides.length})`} />
-          <Tab label={`Я водитель (${driverRides.length})`} />
+          <Tab
+            id="trips-tab-passenger"
+            aria-controls="trips-tabpanel-passenger"
+            label={`Я пассажир (${passengerRides.length})`}
+          />
+          <Tab
+            id="trips-tab-driver"
+            aria-controls="trips-tabpanel-driver"
+            label={`Я водитель (${driverRides.length})`}
+          />
         </Tabs>
       </Paper>
 
       {tab === 0 && (
-        <>
+        <Box
+          role="tabpanel"
+          id="trips-tabpanel-passenger"
+          aria-labelledby="trips-tab-passenger"
+        >
           {passengerRides.length === 0 ? (
             <Paper
               variant="outlined"
@@ -113,11 +126,15 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
               ))}
             </Stack>
           )}
-        </>
+        </Box>
       )}
 
       {tab === 1 && (
-        <>
+        <Box
+          role="tabpanel"
+          id="trips-tabpanel-driver"
+          aria-labelledby="trips-tab-driver"
+        >
           {driverRides.length === 0 ? (
             <Paper
               variant="outlined"
@@ -141,7 +158,7 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
               ))}
             </Stack>
           )}
-        </>
+        </Box>
       )}
     </Box>
   );

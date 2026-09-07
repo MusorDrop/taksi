@@ -377,9 +377,9 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
   }, [rides, query, filters, filterDay, filterTwoSeats, filterTags, sortBy, userLocation]);
 
   return (
-    <Box sx={{ pb: { xs: 12, sm: 8 } }}>
+    <Box component="section" aria-label="Поиск поездок" sx={{ pb: { xs: 12, sm: 8 } }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
           Найти поездку
         </Typography>
         <Button
@@ -722,7 +722,7 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
             <IconButton
               size="small"
               onClick={() => setIsFilterDrawerOpen(false)}
-              aria-label="Закрыть"
+              aria-label="Закрыть фильтры"
             >
               <CloseIcon fontSize="small" />
             </IconButton>
@@ -888,6 +888,11 @@ export default function FindRidesScreen({ onNavigateToOffer }: FindRidesScreenPr
               checked={filterTwoSeats}
               onChange={handleToggleTwoSeats}
               color="primary"
+              slotProps={{
+                input: {
+                  'aria-label': 'Показать поездки с двумя и более свободными местами',
+                },
+              }}
             />
           </Stack>
 

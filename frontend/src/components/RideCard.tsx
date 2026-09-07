@@ -289,6 +289,8 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
 
   return (
     <Card
+      component="article"
+      aria-label={`Поездка: ${ride.from} — ${ride.to}, водитель ${ride.driverName}`}
       variant="outlined"
       onClick={() => setExpanded(!expanded)}
       sx={{
@@ -324,6 +326,15 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
         >
           <Box
             onClick={handleOpenReviews}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleOpenReviews(e as unknown as React.MouseEvent);
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label={`Отзывы и рейтинг водителя ${ride.driverName}`}
             sx={{
               display: 'flex',
               alignItems: 'center',
@@ -337,6 +348,11 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               maxWidth: { xs: 'calc(100% - 150px)', sm: 'none' },
               '&:hover': {
                 bgcolor: 'action.hover',
+              },
+              '&:focus-visible': {
+                outline: '2px solid',
+                outlineColor: 'primary.main',
+                outlineOffset: 2,
               },
             }}
           >
@@ -433,6 +449,8 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               e.stopPropagation();
               setExpanded(!expanded);
             }}
+            aria-label={expanded ? 'Свернуть детали поездки' : 'Развернуть детали поездки'}
+            aria-expanded={expanded}
             sx={{
               order: { xs: 2, sm: 4 },
               transform: expanded ? 'rotate(180deg)' : 'none',
@@ -759,6 +777,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                               size="small"
                               color="primary"
                               title={`Позвонить: ${p.phone}`}
+                              aria-label={`Позвонить пассажиру ${p.name || p.username || ''} по номеру ${p.phone}`}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <PhoneIcon sx={{ fontSize: 18 }} />
@@ -773,6 +792,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                               size="small"
                               color="primary"
                               title="Telegram"
+                              aria-label={`Написать пассажиру ${p.name || p.username || ''} в Telegram`}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <SendIcon sx={{ fontSize: 18 }} />
@@ -813,6 +833,15 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                 direction="row"
                 spacing={1.5}
                 alignItems="center"
+                role="button"
+                tabIndex={0}
+                aria-label={`Отзывы и рейтинг водителя ${ride.driverName}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleOpenReviews(e as unknown as React.MouseEvent);
+                  }
+                }}
                 sx={{
                   mb: 2,
                   cursor: 'pointer',
@@ -820,6 +849,11 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                   p: 0.5,
                   borderRadius: 1,
                   '&:hover': { bgcolor: 'action.hover' },
+                  '&:focus-visible': {
+                    outline: '2px solid',
+                    outlineColor: 'primary.main',
+                    outlineOffset: 2,
+                  },
                 }}
                 onClick={handleOpenReviews}
               >

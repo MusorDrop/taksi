@@ -329,7 +329,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
       <Box sx={{ maxWidth: 440, mx: 'auto', mt: 6, p: 2 }}>
         <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}>
           <KeyIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1.5 }} />
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
+          <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 1 }}>
             Админ-панель
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
@@ -384,16 +384,16 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
 
   // Основная панель администратора
   return (
-    <Box sx={{ pb: 6, pt: 1 }}>
+    <Box component="section" aria-label="Панель администратора" sx={{ pb: 6, pt: 1 }}>
       {/* Шапка админки */}
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" gap={1}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           {onBack && (
-            <IconButton onClick={onBack} size="small" title="Назад в приложение">
+            <IconButton onClick={onBack} size="small" title="Назад в приложение" aria-label="Назад в приложение">
               <ArrowBackIcon />
             </IconButton>
           )}
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+          <Typography variant="h6" component="h1" sx={{ fontWeight: 700 }}>
             Админ-панель
           </Typography>
           <Chip label="Admin mode" color="secondary" size="small" />
@@ -401,7 +401,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
 
         <Stack direction="row" spacing={1}>
           <Tooltip title="Обновить данные">
-            <IconButton onClick={() => loadData()} disabled={isLoading} size="small">
+            <IconButton onClick={() => loadData()} disabled={isLoading} size="small" aria-label="Обновить данные">
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -438,6 +438,7 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
           variant="fullWidth"
           indicatorColor="primary"
           textColor="primary"
+          aria-label="Разделы панели администратора"
         >
           <Tab value="users" label={`Пользователи (${users.length})`} />
           <Tab value="rides" label={`Поездки (${rides.length})`} />
@@ -502,12 +503,18 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
                                 size="small"
                                 color={u.is_blocked ? 'success' : 'error'}
                                 onClick={() => handleToggleBlockUser(u)}
+                                aria-label={u.is_blocked ? `Разблокировать пользователя @${u.username}` : `Заблокировать пользователя @${u.username}`}
                               >
                                 {u.is_blocked ? <LockOpenIcon fontSize="small" /> : <LockIcon fontSize="small" />}
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Редактировать">
-                              <IconButton size="small" color="primary" onClick={() => handleEditUser(u)}>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleEditUser(u)}
+                                aria-label={`Редактировать данные пользователя @${u.username}`}
+                              >
                                 <EditIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
@@ -576,12 +583,22 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                             <Tooltip title="Редактировать поездку">
-                              <IconButton size="small" color="primary" onClick={() => handleEditRide(r)}>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleEditRide(r)}
+                                aria-label={`Редактировать поездку водителя ${r.driver_first_name || r.driver_username || ''}`}
+                              >
                                 <EditIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Удалить поездку">
-                              <IconButton size="small" color="error" onClick={() => handleDeleteRide(r)}>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteRide(r)}
+                                aria-label={`Удалить поездку водителя ${r.driver_first_name || r.driver_username || ''}`}
+                              >
                                 <DeleteOutlineIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
@@ -627,12 +644,22 @@ export default function AdminScreen({ onBack }: AdminScreenProps) {
                         <TableCell align="right">
                           <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                             <Tooltip title="Редактировать автомобиль">
-                              <IconButton size="small" color="primary" onClick={() => handleEditVehicle(v)}>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleEditVehicle(v)}
+                                aria-label={`Редактировать автомобиль ${v.brand} (${v.license_plate})`}
+                              >
                                 <EditIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Удалить автомобиль">
-                              <IconButton size="small" color="error" onClick={() => handleDeleteVehicle(v)}>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteVehicle(v)}
+                                aria-label={`Удалить автомобиль ${v.brand} (${v.license_plate})`}
+                              >
                                 <DeleteOutlineIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
