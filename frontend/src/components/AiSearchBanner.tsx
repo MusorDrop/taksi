@@ -1,4 +1,4 @@
-﻿import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent } from 'react';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
@@ -81,6 +81,8 @@ export default function AiSearchBanner({
 
   return (
     <Paper
+      component="section"
+      aria-label="Быстрый поиск поездок с помощью ИИ"
       elevation={0}
       sx={{
         p: 2,
@@ -126,6 +128,11 @@ export default function AiSearchBanner({
           onChange={(e) => onChangeQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isLoading || disabled}
+          slotProps={{
+            htmlInput: {
+              'aria-label': 'Запрос для интеллектуального поиска поездки',
+            },
+          }}
           sx={{
             ...rainbowKeyframes,
             '& .MuiOutlinedInput-root': {
@@ -154,6 +161,7 @@ export default function AiSearchBanner({
           size="small"
           onClick={handleButtonClick}
           disabled={isLoading || disabled || !query.trim()}
+          aria-label="Найти поездку с помощью ИИ"
           sx={{
             bgcolor: 'white',
             color: 'primary.main',
