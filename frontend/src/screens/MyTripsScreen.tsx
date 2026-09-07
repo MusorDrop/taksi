@@ -15,6 +15,82 @@ import { api } from '../api';
 import { mapBackendRideToRide } from '../utils';
 import type { Ride, RidesResponse } from '../types';
 
+/**
+ * Извлечение числового значения времени отправления поездки для сортировки
+ * @param ride - Объект поездки
+ * @returns Метка времени в миллисекундах или минутах от начала дня
+ */
+function getRideDepartureTimestamp(ride: Ride): number {
+  const timeString = ride.departureTime || ride.departure_time;
+  if (timeString) {
+    const parsedDate = new Date(timeString).getTime();
+    if (!Number.isNaN(parsedDate)) {
+      return parsedDate;
+    }
+  }
+
+  if (ride.time) {
+    const [hours, minutes] = ride.time.split(':').map((part) => parseInt(part, 10));
+    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+      return hours * 60 + minutes;
+    }
+  }
+
+  return ride.createdAt || 0;
+}
+
+/**
+ * Определение ранга группы статуса:
+ * 0 для активных и запланированных (отображаются вверху),
+ * 1 для завершённых и отменённых (отображаются внизу).
+ * @param status - Статус поездки
+ * @returns Ранг группы статуса (0 или 1)
+ */
+function getStatusGroupRank(status?: string): number {
+  if (status === 'completed' || status === 'cancelled') {
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Сортировка поездок для раздела «Мои поездки»:
+ * 1. Активные, запланированные и регулярные поездки вверху (active в приоритете, далее по времени отправления).
+ * 2. Завершённые и отменённые поездки внизу (completed перед cancelled, затем по времени от недавних к старым).
+ * @param ridesList - Исходный массив поездок
+ * @returns Отсортированный массив поездок
+ */
+function sortMyTrips(ridesList: Ride[]): Ride[] {
+  return [...ridesList].sort((a, b) => {
+    const rankA = getStatusGroupRank(a.status);
+    const rankB = getStatusGroupRank(b.status);
+
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+
+    // Если обе поездки активные или запланированные
+    if (rankA === 0) {
+      if (a.status === 'active' && b.status !== 'active') return -1;
+      if (b.status === 'active' && a.status !== 'active') return 1;
+
+      // Сортировка по времени отправления (ближайшие первыми)
+      const timeA = getRideDepartureTimestamp(a);
+      const timeB = getRideDepartureTimestamp(b);
+      return timeA - timeB;
+    }
+
+    // Если обе поездки завершённые или отменённые: 'completed' выше 'cancelled'
+    if (a.status === 'completed' && b.status === 'cancelled') return -1;
+    if (a.status === 'cancelled' && b.status === 'completed') return 1;
+
+    // Среди завершенных сортируем от недавних к старым
+    const timeA = getRideDepartureTimestamp(a);
+    const timeB = getRideDepartureTimestamp(b);
+    return timeB - timeA;
+  });
+}
+
 export interface MyTripsScreenProps {
   initialTab?: 'passenger' | 'driver';
 }
@@ -88,18 +164,23 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
   // Мемоизация списка поездок, в которых текущий пользователь участвует как пассажир
   const passengerRides = useMemo(
     () =>
-      myRides.filter(
-        (r) =>
-          passengerRideIds.includes(r.id) ||
-          Boolean(user?.id && r.passengerIds?.includes(user.id)) ||
-          Boolean(user?.id && r.driverId !== user.id)
+      sortMyTrips(
+        myRides.filter(
+          (r) =>
+            passengerRideIds.includes(r.id) ||
+            Boolean(user?.id && r.passengerIds?.includes(user.id)) ||
+            Boolean(user?.id && r.driverId !== user.id)
+        )
       ),
     [myRides, passengerRideIds, user]
   );
 
   // Мемоизация списка поездок, опубликованных текущим пользователем как водителем
   const driverRides = useMemo(
-    () => myRides.filter((r) => Boolean(user?.id && r.driverId === user.id)),
+    () =>
+      sortMyTrips(
+        myRides.filter((r) => Boolean(user?.id && r.driverId === user.id))
+      ),
     [myRides, user]
   );
 
