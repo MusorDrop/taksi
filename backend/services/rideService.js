@@ -316,7 +316,7 @@ async function getRides(query = {}, currentUserId = null) {
             conditions.push(`r.status = $${params.length}`);
         }
     } else {
-        conditions.push("r.status IN ('planned', 'scheduled')");
+        conditions.push("r.status IN ('planned', 'scheduled', 'active')");
     }
 
     if (departure_time || time) {
@@ -324,7 +324,7 @@ async function getRides(query = {}, currentUserId = null) {
         params.push(parsedTime);
         conditions.push(`r.departure_time >= $${params.length}`);
     } else {
-        conditions.push('r.departure_time > NOW()');
+        conditions.push("(r.departure_time > NOW() OR r.status = 'active')");
     }
 
     if (startCheck.point) {
