@@ -8,6 +8,13 @@ import type { AiParseResponse, RidesResponse } from './types';
 const TOKEN_KEY = 'auth_token';
 
 /**
+ * Базовый URL для выполнения запросов к API через Vite-прокси.
+ * Использование относительного пути '/api' гарантирует работу приложения
+ * как на localhost, так и на мобильных устройствах через туннели (Pinggy, ngrok).
+ */
+export const baseURL: string = '/api';
+
+/**
  * Получение сохраненного JWT-токена из локального хранилища браузера
  */
 export function getAuthToken(): string | null {
@@ -127,14 +134,33 @@ export class ApiError extends Error {
 }
 
 /**
+ * Разрешение эндпоинта с учетом базового URL и очистки от явного localhost
+ * @param endpoint - Относительный или полный URL эндпоинта
+ */
+function resolveEndpoint(endpoint: string): string {
+  const cleaned = endpoint.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?=\/|$)/i, '');
+  if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('/api')) {
+    return cleaned;
+  }
+  if (cleaned.startsWith('/')) {
+    return `${baseURL}${cleaned}`;
+  }
+  return `${baseURL}/${cleaned}`;
+}
+
+/**
  * Базовый метод для отправки типизированных запросов к API через fetch
  * @param endpoint - Относительный или абсолютный URL запроса
  * @param options - Дополнительные параметры запроса (метод, заголовки, AbortSignal)
  */
 export async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  const resolvedEndpoint = resolveEndpoint(endpoint);
   const { body, headers, ...restOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  const requestHeaders = buildRequestHeaders(endpoint, headers, isFormData);
+  const requestHeaders = buildRequestHeaders(resolvedEndpoint, headers, isFormData);
 
   const config: RequestInit = {
     ...restOptions,
@@ -145,10 +171,10 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
     config.body = isFormData ? (body as BodyInit) : JSON.stringify(body);
   }
 
-  const response = await fetch(endpoint, config);
+  const response = await fetch(resolvedEndpoint, config);
 
   if (!response.ok) {
-    const isAdminRequest = endpoint.startsWith('/api/admin') || requestHeaders.has('X-Admin-Key');
+    const isAdminRequest = resolvedEndpoint.startsWith('/api/admin') || requestHeaders.has('X-Admin-Key');
     if (response.status === 401 && !isAdminRequest) {
       handleUnauthorized();
     }
@@ -168,6 +194,7 @@ export async function request<T>(endpoint: string, options: RequestOptions = {})
  * Объект API с вспомогательными методами GET, POST, PUT, PATCH, DELETE
  */
 export const api = {
+  baseURL,
   get: <T>(endpoint: string, options?: RequestOptions): Promise<T> =>
     request<T>(endpoint, { ...options, method: 'GET' }),
 
