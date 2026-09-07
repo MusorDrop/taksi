@@ -139,26 +139,34 @@ export function resolveCoordsToName(lon?: number, lat?: number, fallbackName: st
 }
 
 /**
- * Преобразование относительного пути к аватару в полный URL бэкенда с добавлением параметра для сброса кэша
+ * Преобразование пути к аватару в URL, пригодный для использования в браузере (включая мобильные устройства в локальной сети),
+ * с добавлением параметра для сброса кэша.
+ * Относительные пути (/uploads/...) используются напрямую, чтобы Vite проксировал запросы к бэкенду
+ * независимо от того, открыто приложение с localhost или по IP в локальной сети.
  * @param url - Путь к аватару
- * @returns Полный URL аватара с параметром сброса кэша или undefined
+ * @returns Относительный или полный URL аватара с параметром сброса кэша или undefined
  */
 export function formatAvatarUrl(url?: string | null): string | undefined {
   if (!url || typeof url !== 'string' || url.trim() === '') {
     return undefined;
   }
-  const trimmed = url.trim();
+  let trimmed = url.trim();
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
     return trimmed;
   }
 
+  // Если URL содержит localhost или 127.0.0.1 (с любым портом, например :3000 или :5000),
+  // убираем origin, чтобы запрос был относительным и не направлялся на сам мобильный телефон
+  trimmed = trimmed.replace(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?=\/|$)/i, '');
+  if (!trimmed) {
+    return undefined;
+  }
+
   let fullUrl = trimmed;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    fullUrl = trimmed;
-  } else if (trimmed.startsWith('/uploads/')) {
-    fullUrl = `http://localhost:3000${trimmed}`;
-  } else if (trimmed.startsWith('uploads/')) {
-    fullUrl = `http://localhost:3000/${trimmed}`;
+  if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+    if (!fullUrl.startsWith('/')) {
+      fullUrl = `/${fullUrl}`;
+    }
   }
 
   // Обновление существующего cache-buster параметра или добавление нового
