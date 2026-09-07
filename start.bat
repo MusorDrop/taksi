@@ -4,6 +4,6 @@ echo Запуск Backend-сервера...
 start cmd /k "cd backend && npm start"
 
 echo Запуск Frontend-сервера...
-start cmd /k "cd frontend && npm run dev"
+start cmd /k "cd frontend && npm run dev -- --host"
 
 echo Проект "Попутка ИИ" запускается в двух новых окнах!
