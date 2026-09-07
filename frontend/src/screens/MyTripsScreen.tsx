@@ -1,44 +1,139 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
+import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
+import Alert from '@mui/material/Alert';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import RideCard from '../components/RideCard';
 import { useApp } from '../AppContext';
+import { api } from '../api';
+import { mapBackendRideToRide } from '../utils';
+import type { Ride, RidesResponse } from '../types';
 
 export interface MyTripsScreenProps {
   initialTab?: 'passenger' | 'driver';
 }
 
 export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
-  const { rides, user, passengerRideIds } = useApp();
+  const { rides: contextRides, user, passengerRideIds, leaveRide } = useApp();
   const [activeTab, setActiveTab] = useState<number | null>(null);
+  const [myRides, setMyRides] = useState<Ride[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Выбранная вкладка: приоритет у активного переключения пользователем, иначе берется initialTab
   const tab = activeTab ?? (initialTab === 'driver' ? 1 : 0);
 
+  // Загрузка персональной истории поездок из API /api/rides/my-rides
+  const fetchMyRides = useCallback(async (signal?: AbortSignal, silent = false): Promise<void> => {
+    if (!silent) {
+      setIsLoading(true);
+    }
+    setError(null);
+    try {
+      const response = await api.get<RidesResponse>('/api/rides/my-rides', { signal });
+      if (response && Array.isArray(response.rides)) {
+        const mapped = response.rides.map(mapBackendRideToRide);
+        setMyRides(mapped);
+      } else if (!silent) {
+        setMyRides([]);
+      }
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Не удалось загрузить поездки';
+      setError(message);
+      if (!silent) {
+        setMyRides([]);
+      }
+    } finally {
+      if (!silent) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  // Первоначальная загрузка поездок пользователя при монтировании
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchMyRides(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [fetchMyRides]);
+
+  // Фоновая синхронизация персональных поездок при изменении глобального списка поездок в AppContext
+  useEffect(() => {
+    fetchMyRides(undefined, true);
+  }, [contextRides, fetchMyRides]);
+
+  // Фоновый опрос (поллинг) каждые 10 секунд для обновления статусов (active/completed) и участников
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      fetchMyRides(undefined, true);
+    }, 10000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [fetchMyRides]);
+
   // Мемоизация списка поездок, в которых текущий пользователь участвует как пассажир
   const passengerRides = useMemo(
     () =>
-      rides.filter(
-        (r) => passengerRideIds.includes(r.id) || Boolean(user?.id && r.passengerIds?.includes(user.id))
+      myRides.filter(
+        (r) =>
+          passengerRideIds.includes(r.id) ||
+          Boolean(user?.id && r.passengerIds?.includes(user.id)) ||
+          Boolean(user?.id && r.driverId !== user.id)
       ),
-    [rides, passengerRideIds, user]
+    [myRides, passengerRideIds, user]
   );
 
   // Мемоизация списка поездок, опубликованных текущим пользователем как водителем
   const driverRides = useMemo(
-    () => rides.filter((r) => r.driverId === user?.id),
-    [rides, user]
+    () => myRides.filter((r) => Boolean(user?.id && r.driverId === user.id)),
+    [myRides, user]
+  );
+
+  const handlePassengerLeave = useCallback(
+    async (rideId: string): Promise<void> => {
+      await leaveRide(rideId);
+      await fetchMyRides(undefined, true);
+    },
+    [leaveRide, fetchMyRides]
   );
 
   return (
     <Box component="section" aria-label="Мои поездки" sx={{ pb: { xs: 12, sm: 8 } }}>
-      <Typography variant="h5" component="h1" sx={{ fontWeight: 700, mb: 2.5, letterSpacing: '-0.02em' }}>
-        Мои поездки
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
+          Мои поездки
+        </Typography>
+        <Button
+          size="small"
+          variant="text"
+          startIcon={<RefreshIcon />}
+          onClick={() => fetchMyRides()}
+          disabled={isLoading}
+          sx={{ borderRadius: 2, fontWeight: 600, px: 1.5 }}
+        >
+          Обновить
+        </Button>
+      </Stack>
+
+      {error && (
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2.5 }}>
+          {error}
+        </Alert>
+      )}
 
       <Paper
         elevation={0}
@@ -93,7 +188,11 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
         </Tabs>
       </Paper>
 
-      {tab === 0 && (
+      {isLoading && myRides.length === 0 ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress size={36} />
+        </Box>
+      ) : tab === 0 ? (
         <Box
           role="tabpanel"
           id="trips-tabpanel-passenger"
@@ -122,14 +221,13 @@ export default function MyTripsScreen({ initialTab }: MyTripsScreenProps = {}) {
                   key={ride.id}
                   ride={ride}
                   isPassenger
+                  onLeave={() => handlePassengerLeave(ride.id)}
                 />
               ))}
             </Stack>
           )}
         </Box>
-      )}
-
-      {tab === 1 && (
+      ) : (
         <Box
           role="tabpanel"
           id="trips-tabpanel-driver"
