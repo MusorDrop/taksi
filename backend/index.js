@@ -8,6 +8,9 @@ const pool = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Доверие первому прокси (необходимо для корректной работы rate limiters за обратным прокси)
+app.set('trust proxy', 1);
+
 // Middlewares
 // Защита HTTP-заголовков с помощью Helmet с разрешением загрузки ресурсов с разных origins
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));

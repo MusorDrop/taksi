@@ -578,6 +578,7 @@ async function buildRoute(startCoords, endCoords) {
                             distance_meters: Math.round(meters),
                             duration_seconds: Math.round(seconds),
                             distance_km: Math.round((meters / 1000) * 100) / 100,
+                            duration_min: Math.round(seconds / 60),
                             duration_minutes: Math.round(seconds / 60),
                             route_polyline: {
                                 type: 'LineString',
@@ -601,6 +602,7 @@ async function buildRoute(startCoords, endCoords) {
         distance_meters: meters,
         duration_seconds: seconds,
         distance_km: Math.round((meters / 1000) * 100) / 100,
+        duration_min: Math.round(seconds / 60),
         duration_minutes: Math.round(seconds / 60),
         route_polyline: {
             type: 'LineString',
@@ -610,6 +612,16 @@ async function buildRoute(startCoords, endCoords) {
             ]
         }
     };
+}
+
+/**
+ * Получение параметров маршрута между двумя точками
+ * @param {{ lat?: number, lon?: number, latitude?: number, longitude?: number }} startCoords - Начальные координаты
+ * @param {{ lat?: number, lon?: number, latitude?: number, longitude?: number }} endCoords - Конечные координаты
+ * @returns {Promise<{ distance_meters: number, duration_seconds: number, distance_km: number, duration_min: number, duration_minutes: number, route_polyline: object }>}
+ */
+async function getRouteInfo(startCoords, endCoords) {
+    return buildRoute(startCoords, endCoords);
 }
 
 /**
@@ -645,6 +657,7 @@ module.exports = {
     reverseGeocode,
     suggestAddress,
     buildRoute,
+    getRouteInfo,
     calculateTripPrice,
     isPeakHour,
     getFromGeocodeCache,
