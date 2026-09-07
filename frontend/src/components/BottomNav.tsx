@@ -15,6 +15,8 @@ interface BottomNavProps {
 export default function BottomNav({ value, onChange }: BottomNavProps) {
   return (
     <Paper
+      component="nav"
+      aria-label="Основная навигация"
       elevation={0}
       sx={{
         position: 'fixed',
@@ -80,21 +82,25 @@ export default function BottomNav({ value, onChange }: BottomNavProps) {
           label="Найти поездку"
           value="find"
           icon={<ExploreIcon />}
+          aria-label="Найти поездку"
         />
         <BottomNavigationAction
           label="Создать поездку"
           value="offer"
           icon={<AddCircleIcon />}
+          aria-label="Создать поездку"
         />
         <BottomNavigationAction
           label="Мои поездки"
           value="trips"
           icon={<DirectionsCarIcon />}
+          aria-label="Мои поездки"
         />
         <BottomNavigationAction
           label="Профиль"
           value="profile"
           icon={<PersonIcon />}
+          aria-label="Профиль"
         />
       </BottomNavigation>
     </Paper>

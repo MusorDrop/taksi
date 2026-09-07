@@ -52,6 +52,10 @@ const globalStyles = (
       '#root': {
         paddingTop: 'env(safe-area-inset-top)',
       },
+      ':focus-visible': {
+        outline: '2px solid #0071e3',
+        outlineOffset: '2px',
+      },
     }}
   />
 );
@@ -90,7 +94,7 @@ function AppContent() {
           bgcolor: 'background.default',
         }}
       >
-        <Container maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
+        <Container component="main" maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
           <AdminScreen
             onBack={() => {
               if (window.location.hash) {
@@ -111,6 +115,9 @@ function AppContent() {
   if (isAuthLoading) {
     return (
       <Box
+        component="main"
+        role="status"
+        aria-label="Загрузка приложения"
         sx={{
           minHeight: '100vh',
           display: 'flex',
@@ -137,6 +144,7 @@ function AppContent() {
       }}
     >
       <Container
+        component="main"
         maxWidth="sm"
         sx={{
           px: { xs: 2, sm: 2.5 },
