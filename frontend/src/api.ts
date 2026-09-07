@@ -100,6 +100,8 @@ function buildRequestHeaders(
   isFormData: boolean = false
 ): Headers {
   const headers = new Headers(customHeaders);
+  // Пропуск экрана предупреждения Pinggy для API-запросов
+  headers.set('X-Pinggy-No-Screen', 'true');
   if (!isFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
