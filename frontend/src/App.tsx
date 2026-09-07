@@ -1,4 +1,13 @@
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense, type ReactNode } from 'react';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+  Outlet,
+} from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Box from '@mui/material/Box';
@@ -15,24 +24,10 @@ import FindRidesScreen from './screens/FindRidesScreen';
 import OfferRideScreen from './screens/OfferRideScreen';
 import MyTripsScreen from './screens/MyTripsScreen';
 import ProfileScreen from './screens/ProfileScreen';
-import AdminScreen from './screens/AdminScreen';
 import type { TabKey } from './types';
 
-function checkIsAdminRoute(): boolean {
-  if (typeof window === 'undefined') return false;
-  const path = window.location.pathname.toLowerCase();
-  const hash = window.location.hash.toLowerCase();
-  const search = window.location.search.toLowerCase();
-  return (
-    path.endsWith('/admin') ||
-    path.endsWith('/admin/') ||
-    path.includes('/admin') ||
-    hash === '#admin' ||
-    hash === '#/admin' ||
-    hash.includes('admin') ||
-    search.includes('admin')
-  );
-}
+// Ленивая загрузка панели администратора с разделением бандла на отдельный чанк
+const AdminScreen = lazy(() => import('./screens/AdminScreen'));
 
 const globalStyles = (
   <GlobalStyles
@@ -60,80 +55,128 @@ const globalStyles = (
   />
 );
 
-function AppContent() {
-  const { user, isAuthLoading } = useApp();
-  const [tab, setTab] = useState<TabKey>('find');
-  const [tripsRole, setTripsRole] = useState<'passenger' | 'driver'>('passenger');
-  const [isAdminRoute, setIsAdminRoute] = useState<boolean>(() => checkIsAdminRoute());
+/**
+ * Компонент полноэкранного индикатора загрузки
+ */
+function ScreenLoadingFallback({ label }: { label: string }) {
+  return (
+    <Box
+      component="main"
+      role="status"
+      aria-label={label}
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        bgcolor: 'background.default',
+      }}
+    >
+      <CircularProgress />
+    </Box>
+  );
+}
 
-  // Прокрутка страницы наверх при смене вкладки
+/**
+ * Маршрут панели администратора
+ */
+function AdminRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+      }}
+    >
+      <Container component="main" maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
+        <AdminScreen onBack={() => navigate('/')} />
+      </Container>
+    </Box>
+  );
+}
+
+/**
+ * Маршрут экрана поиска поездок
+ */
+function FindRidesRoute() {
+  const navigate = useNavigate();
+
+  return <FindRidesScreen onNavigateToOffer={() => navigate('/offer')} />;
+}
+
+/**
+ * Маршрут экрана предложения поездки
+ */
+function OfferRideRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <OfferRideScreen
+      onNavigateToProfile={() => navigate('/profile')}
+      onSuccess={() => {
+        navigate('/trips', { state: { initialTab: 'driver' } });
+      }}
+    />
+  );
+}
+
+/**
+ * Маршрут экрана моих поездок
+ */
+function MyTripsRoute() {
+  const location = useLocation();
+  const state = location.state as { initialTab?: 'passenger' | 'driver' } | null;
+
+  return <MyTripsScreen initialTab={state?.initialTab || 'passenger'} />;
+}
+
+/**
+ * Основной макет приложения с нижней навигацией и контейнером экранов
+ */
+function MainLayout() {
+  const { user, isAuthLoading } = useApp();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Прокрутка страницы наверх при переходе между экранами
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [tab]);
-
-  useEffect(() => {
-    const handleLocationChange = () => {
-      setIsAdminRoute(checkIsAdminRoute());
-    };
-
-    window.addEventListener('popstate', handleLocationChange);
-    window.addEventListener('hashchange', handleLocationChange);
-
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-      window.removeEventListener('hashchange', handleLocationChange);
-    };
-  }, []);
-
-  // Скрытый роут админ-панели (/admin или #admin)
-  if (isAdminRoute) {
-    return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          bgcolor: 'background.default',
-        }}
-      >
-        <Container component="main" maxWidth="md" sx={{ px: { xs: 2, sm: 2.5 }, pt: 2.5 }}>
-          <AdminScreen
-            onBack={() => {
-              if (window.location.hash) {
-                window.location.hash = '';
-              }
-              if (window.location.pathname.includes('/admin')) {
-                const cleanPath = window.location.pathname.replace(/\/admin\/?$/, '').replace(/\/admin\/?/, '');
-                window.history.pushState(null, '', cleanPath || '/taksi/');
-              }
-              setIsAdminRoute(false);
-            }}
-          />
-        </Container>
-      </Box>
-    );
-  }
+  }, [location.pathname]);
 
   if (isAuthLoading) {
-    return (
-      <Box
-        component="main"
-        role="status"
-        aria-label="Загрузка приложения"
-        sx={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          bgcolor: 'background.default',
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
+    return <ScreenLoadingFallback label="Загрузка приложения" />;
   }
 
   if (!user) {
     return <AuthScreen />;
   }
+
+  // Определение активной вкладки по текущему маршруту
+  const getActiveTab = (): TabKey => {
+    if (location.pathname.startsWith('/offer')) return 'offer';
+    if (location.pathname.startsWith('/trips')) return 'trips';
+    if (location.pathname.startsWith('/profile')) return 'profile';
+    return 'find';
+  };
+
+  const handleTabChange = (newTab: TabKey): void => {
+    switch (newTab) {
+      case 'find':
+        navigate('/');
+        break;
+      case 'offer':
+        navigate('/offer');
+        break;
+      case 'trips':
+        navigate('/trips');
+        break;
+      case 'profile':
+        navigate('/profile');
+        break;
+    }
+  };
 
   return (
     <Box
@@ -151,21 +194,52 @@ function AppContent() {
           pt: 2.5,
         }}
       >
-        {tab === 'find' && <FindRidesScreen onNavigateToOffer={() => setTab('offer')} />}
-        {tab === 'offer' && (
-          <OfferRideScreen
-            onNavigateToProfile={() => setTab('profile')}
-            onSuccess={() => {
-              setTripsRole('driver');
-              setTab('trips');
-            }}
-          />
-        )}
-        {tab === 'trips' && <MyTripsScreen initialTab={tripsRole} />}
-        {tab === 'profile' && <ProfileScreen />}
+        <Outlet />
       </Container>
-      <BottomNav value={tab} onChange={setTab} />
+      <BottomNav value={getActiveTab()} onChange={handleTabChange} />
     </Box>
+  );
+}
+
+/**
+ * Редирект для обратной совместимости с URL вида /#admin
+ */
+function HashRedirect(): null {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (location.hash === '#admin' || location.hash === '#/admin' || location.hash.includes('admin')) {
+      navigate('/admin', { replace: true });
+    }
+  }, [location.hash, navigate]);
+
+  return null;
+}
+
+function AppContent() {
+  return (
+    <>
+      <HashRedirect />
+      <Routes>
+        <Route
+          path="/admin"
+          element={
+            <Suspense fallback={<ScreenLoadingFallback label="Загрузка панели администратора" />}>
+              <AdminRoute />
+            </Suspense>
+          }
+        />
+        <Route element={<MainLayout />}>
+          <Route index element={<FindRidesRoute />} />
+          <Route path="find" element={<Navigate to="/" replace />} />
+          <Route path="offer" element={<OfferRideRoute />} />
+          <Route path="trips" element={<MyTripsRoute />} />
+          <Route path="profile" element={<ProfileScreen />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
   );
 }
 
@@ -211,9 +285,11 @@ function App() {
     <ThemeModeProvider>
       <CssBaseline />
       {globalStyles}
-      <AppProvider>
-        <AppContent />
-      </AppProvider>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </BrowserRouter>
     </ThemeModeProvider>
   );
 }

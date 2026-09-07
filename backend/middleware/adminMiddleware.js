@@ -193,9 +193,39 @@ function validateAdminSecret(adminKey) {
 }
 
 /**
+ * Обязательная валидация JWT токена администратора в заголовке Authorization.
+ * @param {string | undefined} authHeader - Значение заголовка Authorization.
+ * @returns {{ valid: boolean; status?: number; error?: string; user?: object }} Результат валидации токена.
+ */
+function validateAdminJwt(authHeader) {
+    if (!authHeader || typeof authHeader !== 'string') {
+        return { valid: false, status: 401, error: 'Токен администратора отсутствует' };
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return { valid: false, status: 401, error: 'Токен администратора отсутствует' };
+    }
+
+    let decoded;
+    try {
+        decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    } catch {
+        return { valid: false, status: 401, error: 'Недействительный токен администратора' };
+    }
+
+    if (!decoded || decoded.role !== 'admin') {
+        return { valid: false, status: 403, error: 'Доступ запрещен: требуются права администратора' };
+    }
+
+    return { valid: true, user: decoded };
+}
+
+/**
  * Middleware для защиты API администратора:
  * 1. Проверяет браузерные заголовки (User-Agent, Sec-Fetch-Mode, Origin/Referer).
  * 2. Проверяет секретный ключ администратора X-Admin-Key с защитой от тайминг-атак.
+ * 3. Обязательно проверяет валидный JWT токен администратора с ролью 'admin'.
  */
 function adminMiddleware(req, res, next) {
     if (req.method === 'OPTIONS') {
@@ -227,21 +257,14 @@ function adminMiddleware(req, res, next) {
         return res.status(keyValidation.status || 403).json({ error: keyValidation.error });
     }
 
-    // Если передан заголовок Authorization, верифицируем JWT для идентификации администратора и аудита
-    const authHeader = req.headers['authorization'];
-    if (authHeader) {
-        const token = authHeader.split(' ')[1];
-        if (!token) {
-            return res.status(401).json({ error: 'Токен администратора отсутствует' });
-        }
-        try {
-            const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-            req.adminUser = decoded;
-            req.user = decoded;
-        } catch {
-            return res.status(401).json({ error: 'Недействительный токен администратора' });
-        }
+    // Обязательная проверка JWT токена администратора и роли 'admin'
+    const jwtValidation = validateAdminJwt(req.headers['authorization']);
+    if (!jwtValidation.valid) {
+        return res.status(jwtValidation.status || 401).json({ error: jwtValidation.error });
     }
+
+    req.adminUser = jwtValidation.user;
+    req.user = jwtValidation.user;
 
     return next();
 }

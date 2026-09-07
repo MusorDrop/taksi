@@ -146,6 +146,11 @@ export default function AuthScreen() {
           component="form"
           onSubmit={handleSubmit}
         >
+          {/* Предупреждение о демонстрационном режиме */}
+          <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2.5 }}>
+            Внимание: Проект находится в разработке. Данная версия является демонстрационным кейсом.
+          </Alert>
+
           <Tabs
             value={tabIndex}
             onChange={(_, newValue: number) => {

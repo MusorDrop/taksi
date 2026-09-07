@@ -19,6 +19,11 @@ async function runSmokeTests() {
     let createdRideWithVehicleId = null;
     let driverToken = null;
     let passengerToken = null;
+    const adminToken = jwt.sign(
+        { id: '00000000-0000-0000-0000-000000000001', username: 'smoke_test_admin', role: 'admin' },
+        JWT_SECRET,
+        { expiresIn: '1h' }
+    );
 
     // Запуск сервера на случайном свободном порту
     const server = await new Promise((resolve) => {
@@ -471,8 +476,8 @@ async function runSmokeTests() {
             hasErrors = true;
         }
 
-        // Тест 10: Security - Защита API администратора (авторизация, timing-safe auth)
-        console.log('\n--- Тест 10: Security - Проверка блокировки доступа к /api/admin без ключа и валидация origin ---');
+        // Тест 10: Security - Защита API администратора (авторизация, timing-safe auth, JWT c role: 'admin')
+        console.log('\n--- Тест 10: Security - Проверка блокировки доступа к /api/admin без ключа, без JWT и валидация origin ---');
         try {
             const validAdminKey = process.env.ADMIN_SECRET;
             if (!validAdminKey) {
@@ -492,22 +497,42 @@ async function runSmokeTests() {
             });
             // Запрос с недоверенного Origin (ожидается 403)
             const untrustedOriginRes = await fetch(`${baseUrl}/api/admin/users`, {
-                headers: { ...browserHeaders, 'Origin': 'http://attacker-site.com', 'X-Admin-Key': validAdminKey }
+                headers: { ...browserHeaders, 'Origin': 'http://attacker-site.com', 'X-Admin-Key': validAdminKey, 'Authorization': `Bearer ${adminToken}` }
             });
-            // Запрос с валидным ключом и доверенным Origin (ожидается 200)
-            const validAdminRes = await fetch(`${baseUrl}/api/admin/users`, {
+            // Запрос с валидным ключом, но без JWT токена (ожидается 401)
+            const noTokenRes = await fetch(`${baseUrl}/api/admin/users`, {
                 headers: { ...browserHeaders, 'X-Admin-Key': validAdminKey }
+            });
+            // Запрос с валидным ключом, но с токеном не-администратора (ожидается 403)
+            const nonAdminTokenRes = await fetch(`${baseUrl}/api/admin/users`, {
+                headers: {
+                    ...browserHeaders,
+                    'X-Admin-Key': validAdminKey,
+                    'Authorization': `Bearer ${passengerToken}`
+                }
+            });
+            // Запрос с валидным ключом, доверенным Origin и валидным JWT токеном администратора (ожидается 200)
+            const validAdminRes = await fetch(`${baseUrl}/api/admin/users`, {
+                headers: {
+                    ...browserHeaders,
+                    'X-Admin-Key': validAdminKey,
+                    'Authorization': `Bearer ${adminToken}`
+                }
             });
 
             const pass = noKeyRes.status === 401 &&
                          wrongKeyRes.status === 403 &&
                          untrustedOriginRes.status === 403 &&
+                         noTokenRes.status === 401 &&
+                         nonAdminTokenRes.status === 403 &&
                          validAdminRes.status === 200;
 
             console.log(`Без ключа: ${noKeyRes.status} (Ожидался: 401)`);
             console.log(`Неверный ключ: ${wrongKeyRes.status} (Ожидался: 403)`);
             console.log(`Недоверенный Origin: ${untrustedOriginRes.status} (Ожидался: 403)`);
-            console.log(`Корректный ключ и Origin: ${validAdminRes.status} (Ожидался: 200)`);
+            console.log(`Без JWT токена: ${noTokenRes.status} (Ожидался: 401)`);
+            console.log(`С токеном пассажира: ${nonAdminTokenRes.status} (Ожидался: 403)`);
+            console.log(`Корректный ключ, JWT и Origin: ${validAdminRes.status} (Ожидался: 200)`);
 
             testResults.push({
                 test: 'Security: Admin API authentication & origin protection',
@@ -532,7 +557,8 @@ async function runSmokeTests() {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Sec-Fetch-Mode': 'cors',
                 'Origin': 'http://localhost:5173',
-                'X-Admin-Key': validAdminKey
+                'X-Admin-Key': validAdminKey,
+                'Authorization': `Bearer ${adminToken}`
             };
 
             const invalidUuidRes = await fetch(`${baseUrl}/api/admin/users/not-a-valid-uuid-123`, {

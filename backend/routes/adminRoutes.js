@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const pool = require('../db');
 const adminMiddleware = require('../middleware/adminMiddleware');
 
@@ -6,6 +7,20 @@ const router = express.Router();
 
 // Регулярное выражение для валидации UUID из единого модуля валидации (🟡-1)
 const { UUID_REGEX } = require('../utils/validation');
+
+// Ограничение частоты запросов для панели администратора (20 запросов в минуту для защиты от брутфорса)
+const adminLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 20,
+    message: {
+        error: 'Слишком много запросов к панели администратора. Пожалуйста, повторите попытку через минуту.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+// Применение ограничения частоты запросов ко всем эндпоинтам администратора
+router.use(adminLimiter);
 
 // Защита всех эндпоинтов администратора
 router.use(adminMiddleware);

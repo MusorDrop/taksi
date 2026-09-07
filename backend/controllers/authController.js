@@ -1,8 +1,27 @@
+const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
 const { isValidPhone } = require('../utils/validation');
+
+/**
+ * Безопасное удаление файла с диска
+ * @param {string|null|undefined} filePath - Абсолютный путь к файлу
+ */
+function safeDeleteFile(filePath) {
+    if (!filePath || typeof filePath !== 'string') {
+        return;
+    }
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    } catch (err) {
+        console.error('Ошибка при удалении файла с диска:', err);
+    }
+}
 
 /**
  * Санитизация объекта пользователя для безопасного ответа клиенту
@@ -287,6 +306,9 @@ async function getProfile(req, res) {
  */
 async function uploadAvatar(req, res) {
     if (!req.user || !req.user.id) {
+        if (req.file?.path) {
+            safeDeleteFile(req.file.path);
+        }
         return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
@@ -297,6 +319,10 @@ async function uploadAvatar(req, res) {
     const avatarUrl = `/uploads/${req.file.filename}`;
 
     try {
+        // Запрашиваем текущий URL аватара пользователя для последующего удаления старого файла
+        const prevUserRes = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [req.user.id]);
+        const oldAvatarUrl = prevUserRes.rows[0]?.avatar_url;
+
         const query = `
             UPDATE users
             SET avatar_url = $1
@@ -306,7 +332,17 @@ async function uploadAvatar(req, res) {
         const result = await pool.query(query, [avatarUrl, req.user.id]);
 
         if (result.rows.length === 0) {
+            safeDeleteFile(req.file.path);
             return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        // Если у пользователя был старый аватар в папке uploads, удаляем его
+        if (oldAvatarUrl && typeof oldAvatarUrl === 'string' && oldAvatarUrl.startsWith('/uploads/')) {
+            const oldFileName = path.basename(oldAvatarUrl);
+            const oldFilePath = path.join(__dirname, '..', 'uploads', oldFileName);
+            if (oldFilePath !== req.file.path) {
+                safeDeleteFile(oldFilePath);
+            }
         }
 
         const updatedUser = formatUserProfile(result.rows[0]);
@@ -317,6 +353,10 @@ async function uploadAvatar(req, res) {
             user: updatedUser
         });
     } catch (err) {
+        // При сбое сохранения в базе данных очищаем загруженный файл во избежание утечки дискового пространства
+        if (req.file?.path) {
+            safeDeleteFile(req.file.path);
+        }
         console.error('Ошибка в uploadAvatar:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при сохранении аватара' });
     }

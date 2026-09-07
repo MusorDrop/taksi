@@ -20,6 +20,20 @@ const authLimiter = process.env.NODE_ENV === 'test'
         legacyHeaders: false
     });
 
+// Ограничение частоты загрузки аватара (максимум 20 запросов за 15 минут)
+// Отключается в тестовом окружении
+const avatarLimiter = process.env.NODE_ENV === 'test'
+    ? (req, res, next) => next()
+    : rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 20,
+        message: {
+            error: 'Слишком много запросов на загрузку аватара. Пожалуйста, повторите попытку через 15 минут.'
+        },
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+
 // Регистрация нового пользователя
 router.post('/register', authLimiter, authController.register);
 
@@ -33,6 +47,6 @@ router.get('/me', authenticateToken, authController.getProfile);
 router.patch('/me', authenticateToken, authController.updateProfile);
 
 // Загрузка аватарки текущего пользователя (с валидацией расширения и сигнатуры magic bytes)
-router.post('/me/avatar', authenticateToken, handleAvatarUpload, authController.uploadAvatar);
+router.post('/me/avatar', avatarLimiter, authenticateToken, handleAvatarUpload, authController.uploadAvatar);
 
 module.exports = router;
