@@ -179,6 +179,9 @@ async function createReview(req, res) {
         });
     } catch (err) {
         await client.query('ROLLBACK');
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Вы уже оставили отзыв', message: 'Вы уже оставили отзыв' });
+        }
         console.error('Ошибка добавления отзыва:', err);
         return res.status(500).json({ error: 'Внутренняя ошибка сервера при создании отзыва' });
     } finally {

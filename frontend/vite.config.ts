@@ -8,23 +8,26 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'script',
       devOptions: {
         enabled: true,
       },
       manifest: {
         name: 'Попутка ИИ',
         short_name: 'Попутка',
+        start_url: '/taksi/',
+        id: '/taksi/',
         theme_color: '#1565c0',
         background_color: '#ffffff',
         display: 'standalone',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: '/taksi/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: 'pwa-512x512.png',
+            src: '/taksi/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
           },
@@ -34,6 +37,7 @@ export default defineConfig({
   ],
   base: '/taksi/',
   server: {
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

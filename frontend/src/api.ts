@@ -3,7 +3,7 @@
  * Реализует автоматическое добавление JWT-токена, обработку 401 ошибки и поддержку AbortSignal.
  */
 
-import type { AiParseResponse } from './types';
+import type { AiParseResponse, RidesResponse } from './types';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -188,6 +188,9 @@ export const api = {
 
   parseAiRequest: (message: string): Promise<AiParseResponse> =>
     parseAiRequest(message),
+
+  getMyRides: (options?: RequestOptions): Promise<RidesResponse> =>
+    api.get<RidesResponse>('/api/rides/my-rides', options),
 };
 
 /**
@@ -207,4 +210,16 @@ export async function joinRideApi<T = unknown>(rideId: string, selectedDay?: str
 export async function parseAiRequest(message: string): Promise<AiParseResponse> {
   return api.post<AiParseResponse>('/api/ai/parse', { message, text: message });
 }
+
+/**
+ * Получение списка поездок текущего пользователя (водительских и пассажирских)
+ * @param options - Дополнительные параметры запроса
+ */
+export async function getMyRidesApi(options?: RequestOptions): Promise<RidesResponse> {
+  return api.get<RidesResponse>('/api/rides/my-rides', options);
+}
+
+export type { BackendRide, Ride } from './types';
+export { mapBackendRideToRide } from './utils';
+
 

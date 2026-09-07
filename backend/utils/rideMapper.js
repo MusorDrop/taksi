@@ -298,6 +298,7 @@ function mapRideRow(row, currentUserId = null) {
         ride_type: row.ride_type || 'one_off',
         regular_days: row.regular_days || null,
         polyline: polyline,
+        has_reviewed: row.has_reviewed || false,
         created_at: row.created_at
     };
 }

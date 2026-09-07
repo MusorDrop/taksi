@@ -102,7 +102,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
   const [expanded, setExpanded] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState<boolean>(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState<boolean>(false);
-  const [isReviewed, setIsReviewed] = useState<boolean>(false);
+  const [isReviewed, setIsReviewed] = useState<boolean>(ride.hasReviewed || false);
 
   // Проверка: является ли текущий пользователь пассажиром поездки (включая passenger_ids)
   const hasJoinedAsPassenger = Boolean(
@@ -207,7 +207,8 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
   const isPlanned = ride.status === 'planned' || ride.status === 'scheduled' || !ride.status;
   const isRideActive = ride.status === 'active';
   const isCompleted = ride.status === 'completed';
-  const isJoinDisabled = isRideActive || isCompleted;
+  const isCancelled = ride.status === 'cancelled';
+  const isJoinDisabled = isRideActive || isCompleted || isCancelled;
 
   const driverRatingVal = Number(ride.driverRating ?? ride.driver_rating ?? ride.averageRating ?? 0);
   const driverReviewsCountVal = Number(ride.driverReviewsCount ?? ride.driver_reviews_count ?? 0);
@@ -296,15 +297,29 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
       sx={{
         cursor: 'pointer',
         borderRadius: 4,
+        opacity: isCompleted || isCancelled ? 0.8 : 1,
+        bgcolor: (theme) =>
+          isCompleted || isCancelled
+            ? theme.palette.mode === 'dark'
+              ? 'rgba(255, 255, 255, 0.02)'
+              : 'rgba(248, 250, 252, 0.7)'
+            : 'background.paper',
         borderColor: (theme) =>
-          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)',
+          isCompleted || isCancelled
+            ? theme.palette.mode === 'dark'
+              ? 'rgba(255, 255, 255, 0.05)'
+              : 'rgba(15, 23, 42, 0.06)'
+            : theme.palette.mode === 'dark'
+            ? 'rgba(255, 255, 255, 0.08)'
+            : 'rgba(15, 23, 42, 0.08)',
         boxShadow: (theme) =>
           theme.palette.mode === 'dark'
             ? '0 4px 16px rgba(0, 0, 0, 0.25)'
             : '0 2px 8px -2px rgba(15, 23, 42, 0.05), 0 1px 3px -1px rgba(15, 23, 42, 0.03)',
         transition:
-          'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease',
+          'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, opacity 0.2s ease',
         '&:hover': {
+          opacity: 1,
           transform: 'translateY(-2px)',
           borderColor: 'primary.light',
           boxShadow: (theme) =>
@@ -422,7 +437,11 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               flexShrink: 0,
             }}
           >
-            <Typography variant="h6" color="primary.main" sx={{ fontWeight: 750, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+            <Typography
+              variant="h6"
+              color={isCompleted || isCancelled ? 'text.secondary' : 'primary.main'}
+              sx={{ fontWeight: 750, lineHeight: 1.2, letterSpacing: '-0.02em' }}
+            >
               {ride.price} ₽
             </Typography>
             <Box
@@ -434,11 +453,26 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                 py: 0.15,
                 borderRadius: 1.5,
                 bgcolor: (theme) =>
-                  theme.palette.mode === 'dark' ? 'rgba(0, 113, 227, 0.15)' : 'rgba(0, 113, 227, 0.08)',
+                  isCompleted || isCancelled
+                    ? theme.palette.mode === 'dark'
+                      ? 'rgba(255, 255, 255, 0.05)'
+                      : 'rgba(0, 0, 0, 0.04)'
+                    : theme.palette.mode === 'dark'
+                    ? 'rgba(0, 113, 227, 0.15)'
+                    : 'rgba(0, 113, 227, 0.08)',
               }}
             >
-              <Typography variant="caption" sx={{ display: 'block', fontSize: '0.71rem', lineHeight: 1.2, fontWeight: 600, color: 'primary.main' }}>
-                за место • {ride.availableSeats ?? 0} мест
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  fontSize: '0.71rem',
+                  lineHeight: 1.2,
+                  fontWeight: 600,
+                  color: isCompleted || isCancelled ? 'text.secondary' : 'primary.main',
+                }}
+              >
+                {isCompleted ? 'завершена' : isCancelled ? 'отменена' : `за место • ${ride.availableSeats ?? 0} мест`}
               </Typography>
             </Box>
           </Box>
@@ -601,6 +635,47 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
         )}
 
         <Stack direction="row" spacing={0.6} sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
+          {isCompleted && (
+            <Chip
+              size="small"
+              label="Завершена"
+              color="default"
+              sx={{
+                fontWeight: 650,
+                borderRadius: 2,
+                height: 26,
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.08)',
+                color: 'text.secondary',
+              }}
+            />
+          )}
+          {isCancelled && (
+            <Chip
+              size="small"
+              label="Отменена"
+              color="default"
+              sx={{
+                fontWeight: 650,
+                borderRadius: 2,
+                height: 26,
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.08)',
+                color: 'error.main',
+                border: '1px solid',
+                borderColor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.2)',
+              }}
+            />
+          )}
+          {isRideActive && (
+            <Chip
+              size="small"
+              label="Поездка началась"
+              color="primary"
+              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
+            />
+          )}
           {!isRegular && (
             <Chip
               size="small"
@@ -620,19 +695,11 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
             />
           )}
-          {isRideActive && (
-            <Chip
-              size="small"
-              label="Поездка началась"
-              color="primary"
-              sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
-            />
-          )}
-          {isCompleted && (
+          {isCompleted && isReviewed && (
             <Chip
               size="small"
               icon={<StarIcon sx={{ fontSize: 14 }} />}
-              label={isReviewed ? 'Отзыв отправлен' : 'Поездка завершена'}
+              label="Отзыв отправлен"
               color="success"
               variant="outlined"
               sx={{ fontWeight: 600, borderRadius: 2, height: 26 }}
@@ -917,7 +984,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
               )}
               {isDriver && (
                 <Stack spacing={1} sx={{ width: '100%' }}>
-                  {isPlanned && (
+                  {isPlanned && !isCancelled && (
                     <Button
                       fullWidth
                       variant="contained"
@@ -951,7 +1018,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                       Завершить поездку
                     </Button>
                   )}
-                  {!isCompleted && (
+                  {!isCompleted && !isCancelled && (
                     <Button
                       fullWidth
                       variant="outlined"
@@ -966,7 +1033,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                       Редактировать маршрут
                     </Button>
                   )}
-                  {!isCompleted && (
+                  {!isCompleted && !isCancelled && (
                     <Button
                       fullWidth
                       variant="outlined"
@@ -988,7 +1055,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                 <Stack direction="row" spacing={1} sx={{ width: '100%' }}>
                   <Button
                     fullWidth
-                    variant={isCompleted ? 'outlined' : 'contained'}
+                    variant={isCompleted || isCancelled ? 'outlined' : 'contained'}
                     size="small"
                     startIcon={<SendIcon />}
                     href={`https://t.me/${ride.telegram}`}
@@ -1015,7 +1082,7 @@ function RideCardComponent({ ride, isPassenger, isDriver, onJoin, onLeave }: Rid
                   )}
                 </Stack>
               )}
-              {!isDriver && isPassenger && !isCompleted && (
+              {!isDriver && isPassenger && !isCompleted && !isCancelled && (
                 <Button
                   fullWidth
                   variant="outlined"
