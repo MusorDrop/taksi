@@ -18,7 +18,6 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Autocomplete from '@mui/material/Autocomplete';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
-import SendIcon from '@mui/icons-material/Send';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import PaymentsIcon from '@mui/icons-material/Payments';
@@ -56,8 +55,6 @@ export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: Offe
     setDate,
     time,
     setTime,
-    telegram,
-    setTelegram,
     price,
     setPrice,
     description,
@@ -607,24 +604,6 @@ export default function OfferRideScreen({ onNavigateToProfile, onSuccess }: Offe
             disabled={hasNoVehicles}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-          />
-
-          <TextField
-            fullWidth
-            label="Ваш Telegram (@username)"
-            placeholder="@username"
-            disabled={hasNoVehicles}
-            value={telegram}
-            onChange={(e) => setTelegram(e.target.value)}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SendIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-                  </InputAdornment>
-                ),
-              },
-            }}
           />
 
           <Button

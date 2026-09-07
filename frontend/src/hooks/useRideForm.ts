@@ -80,8 +80,6 @@ export interface UseRideFormReturn {
   setDate: (date: string) => void;
   time: string;
   setTime: (time: string) => void;
-  telegram: string;
-  setTelegram: (tg: string) => void;
   price: string;
   setPrice: (price: string) => void;
   description: string;
@@ -115,7 +113,7 @@ export interface UseRideFormReturn {
  * Кастомный хук формы создания поездки (управление состоянием, API запросами и валидацией)
  */
 export function useRideForm(): UseRideFormReturn {
-  const { addRide, user } = useApp();
+  const { addRide } = useApp();
 
   const fromSuggest = useAddressSuggest();
   const toSuggest = useAddressSuggest();
@@ -124,7 +122,6 @@ export function useRideForm(): UseRideFormReturn {
   const [regularDays, setRegularDays] = useState<string[]>(['Пн', 'Вт', 'Ср', 'Чт', 'Пт']);
   const [date, setDate] = useState<string>(getDefaultDateString);
   const [time, setTime] = useState<string>(getDefaultTimeString);
-  const [telegram, setTelegram] = useState(user?.telegram ?? '');
   const [price, setPrice] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [tags, setTags] = useState<string[]>([]);
@@ -200,7 +197,6 @@ export function useRideForm(): UseRideFormReturn {
     !hasNoVehicles &&
       fromSuggest.value.trim() &&
       toSuggest.value.trim() &&
-      telegram.trim() &&
       isPriceValid &&
       isDateOrDaysValid &&
       time,
@@ -248,7 +244,6 @@ export function useRideForm(): UseRideFormReturn {
         departure_time: departureIso,
         departureTime: departureIso,
         time,
-        telegram: telegram.replace('@', ''),
         price: parsedPrice,
         distanceKm: routeDistance ?? 5.0,
         isPeak: isPeakDemand,
@@ -298,8 +293,6 @@ export function useRideForm(): UseRideFormReturn {
     setDate,
     time,
     setTime,
-    telegram,
-    setTelegram,
     price,
     setPrice,
     description,
