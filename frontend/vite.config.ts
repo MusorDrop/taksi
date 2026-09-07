@@ -9,6 +9,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'script',
+      useCredentials: true,
       devOptions: {
         enabled: true,
       },
